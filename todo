@@ -1,0 +1,32 @@
+jobs / commands
+	async extern exekvering via !<>|
+file
+	spara tom buffer med nytt filnamn
+		check for overwrite
+	overwrite when hash-verify fails on save
+	backup files on disk
+window
+	hide
+	command Get
+view
+	scroll must account for soft wraps
+text
+	int64 as default in case of large files
+	undvika in-ram buffer - swapfiles?
+	concurrent-safe gap buffer
+	auto increment new line
+	undo
+		unlimited for real (undo undo)
+	cache write Change{} until next action
+---
+visual
+	calculate view percentage on screen
+	move windows around
+	resize columns
+	file stats with ^G
+	keep tagline updated with flags
+	show running processes in menu
+	another style for top menu
+	do not change CurWin on mousepressed
+	scroll on mpressed at bottom line
+	unprintableChar styling

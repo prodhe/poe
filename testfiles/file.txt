@@ -1,0 +1,12 @@
+package main
+
+import (
+	"time"
+)
+
+type File struct {
+	name   string
+	read   bool      // true if file has been read
+	mtime  time.Time // of file when last read/written
+	sha256 string    // of file when last read/written
+}

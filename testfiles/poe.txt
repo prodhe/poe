@@ -1,0 +1,287 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"runtime"
+	"strings"
+
+	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/encoding"
+	"github.com/prodhe/poe/gapbuffer"
+)
+
+var (
+	// Main screen terminal
+	screen tcell.Screen
+
+	// Styles
+	defStyle       tcell.Style
+	cursorStyle    tcell.Style
+	tagStyle       tcell.Style
+	separatorStyle tcell.Style
+
+	// cols contains windows.
+	cols Columns
+
+	// Control window: commands and output
+	ctrlWin *Window
+
+	// curWin index points to the currently focused window from AllWindows().
+	curWin int
+
+	// redrawCount makes sure the garbage collector is run regularly
+	redrawCount uint
+)
+
+// InitStyles initializes the different styles (colors for background/foreground).
+func InitStyles() {
+	defStyle = tcell.StyleDefault.
+		Background(tcell.NewHexColor(0xffffea)).
+		Foreground(tcell.ColorBlack)
+	cursorStyle = defStyle.Background(tcell.NewHexColor(0x99994c))
+	tagStyle = tcell.StyleDefault.
+		Background(tcell.NewHexColor(0xeaffff)).
+		Foreground(tcell.ColorBlack)
+	separatorStyle = defStyle
+}
+
+// InitSceen initializes the tcell terminal.
+func InitScreen() {
+	// setup tcell terminal
+	encoding.Register()
+	var err error
+	screen, err = tcell.NewScreen()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	if err = screen.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	screen.SetStyle(defStyle)
+	screen.EnableMouse()
+	screen.Clear()
+}
+
+func InitControlWindow() {
+	w, h := screen.Size()
+
+	fn := "+poe"
+	ctrlWin = &Window{
+		body:    &View{text: &Text{buf: gapbuffer.New()}},
+		tagline: &View{text: &Text{buf: gapbuffer.New()}},
+		file:    &File{name: fn},
+	}
+	ctrlWin.body.SetStyle(defStyle)
+	ctrlWin.tagline.SetStyle(tagStyle)
+	ctrlWin.Resize(w-w/3+1, 0, w/3-1, h)
+	ctrlWin.body.tabstop = 4
+	ctrlWin.visible = true
+
+	fmt.Fprintf(ctrlWin.tagline, "Exit Save Clear h %d", ctrlWin.body.h)
+}
+
+// LoadBuffers reads files from disk and loads them into windows. Screen need to be initialized.
+func LoadBuffers(fns []string) {
+	if len(fns) < 1 {
+		fns = append(fns, "")
+	}
+
+	//w, h := screen.Size()
+
+	// create a first column
+	//	if cols == nil {
+	//		cols = append(cols, &Column{0, 0, w / 2, h, nil})
+	//	}
+	cols = cols.Add()
+
+	// setup windows
+	for i, fn := range fns {
+		win := NewWindow(fn)
+		win.LoadBuffer()
+		if i == 0 { // first window gets focus
+			win.SetFocus(true)
+		}
+		cols[len(cols)-1].AddWindow(win)
+	}
+
+	cols = cols.Add()
+	cols[len(cols)-1].AddWindow(NewWindow(""))
+}
+
+func printMsg(format string, a ...interface{}) {
+	if a == nil {
+		fmt.Fprintf(ctrlWin.body, format)
+		return
+	}
+	fmt.Fprintf(ctrlWin.body, format, a...)
+}
+
+func cleanExit() {
+	if screen != nil {
+		screen.Fini()
+	}
+	if err := recover(); err != nil {
+		buf := make([]byte, 1<<16)
+		n := runtime.Stack(buf, true)
+		fmt.Println("poe error:", err)
+		fmt.Printf("%s", buf[:n+1])
+		os.Exit(1)
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	// Init
+	InitStyles()
+	InitScreen()
+	InitControlWindow()
+
+	// proper closing and terminal cleanup on exit and error message on a possible panic
+	defer cleanExit()
+
+	// This loads all buffers reading file names from command line. Each file handler must be closed manually later on.
+	LoadBuffers(flag.Args())
+
+	var qcnt int
+	//var w, h int
+	var ev tcell.Event
+	// main loop
+outer:
+	for {
+		//w, h = screen.Size()
+		ev = screen.PollEvent()
+
+		var mx, my, mscroll int
+		var btn1clk bool
+
+		switch ev := ev.(type) {
+		case *tcell.EventResize:
+			evw, evh := ev.Size()
+			//printMsg("old %d %d, new %d %d\n",
+			//w, h, evw, evh)
+			for _, col := range cols {
+				//newx := win.x + (evw - w)
+				//newy := win.y + (evh - h)
+				//neww := win.w + (evw - w)
+				//newh := win.h + (evh - h)
+
+				col.Resize(col.x, col.y, evw, evh)
+			}
+			screen.Clear()
+			screen.Sync()
+		case *tcell.EventKey:
+			// system wide shortcuts
+			key := ev.Key()
+			switch key {
+			case tcell.KeyCtrlL: // refresh terminal
+				screen.Clear()
+				screen.Sync()
+			case tcell.KeyCtrlQ:
+				//cmdline.focused = false
+				var unsaved []string
+				for _, win := range AllWindows() {
+					if win.body.dirty {
+						unsaved = append(unsaved, fmt.Sprintf("    %3s %s", win.Flags(), win.Name()))
+					}
+				}
+				qcnt++
+				if qcnt > 1 || len(unsaved) == 0 {
+					break outer // leaves main loop and deferred exit will cleanup
+				}
+				printMsg("changed files\n%s\n", strings.Join(unsaved, "\n"))
+			case tcell.KeyCtrlN: // cycle through buffers
+				CurWin().SetFocus(false)
+				curWin++
+				if curWin >= len(AllWindows()) {
+					curWin = 0
+				}
+				if !CurWin().file.read && CurWin().file.name != "" {
+					CurWin().LoadBuffer()
+				}
+				CurWin().SetFocus(true)
+				CurWin().visible = true
+				cols[0].ResizeInternal()
+			case tcell.KeyCtrlD: // open command prompt
+				toggleCmdline()
+			default: // let the focused window or cmdline take over keyboard input
+				qcnt = 0
+				if ctrlWin.focused {
+					ctrlWin.HandleEvent(ev)
+				} else {
+					CurWin().HandleEvent(ev)
+				}
+			}
+		case *tcell.EventMouse:
+			mx, my = ev.Position()
+			switch ev.Buttons() {
+			case tcell.Button1:
+				btn1clk = true
+			case tcell.WheelUp: // scrollup
+				mscroll = -1
+			case tcell.WheelDown: // scrolldown
+				mscroll = 1
+			}
+		}
+
+		// Draw command line
+		if ctrlWin.visible {
+			ctrlWin.tagline.Draw()
+			ctrlWin.body.Draw()
+		}
+
+		// Scroll message line if that is where the mouse is
+		//		x, y, w, h := msgline.Size()
+		//		if mx >= x && mx <= x+w && my >= y && my <= y+h {
+		//			msgline.Scroll(mscroll)
+		//			mscroll = 0 // stop other windows from scrolling
+		//		}
+
+		// Draw windows
+		for _, win := range AllWindows() {
+			if !win.visible {
+				continue
+			}
+
+			if win.focused && mscroll != 0 {
+				win.body.Scroll(mscroll)
+			}
+
+			if btn1clk {
+				var v *View
+				v = win.body
+				offset := v.XYToOffset(mx, my)
+				printMsg("x: %d, y: %d, offset: %d\n", mx, my, offset)
+				v.SetCursor(offset, 0)
+			}
+
+			// Tagline
+			win.tagline.text.buf.Destroy()
+			fmt.Fprintf(win.tagline, "%3s %s x %d y %d w %d h %d",
+				win.Flags(),
+				win.Name(),
+				win.x,
+				win.y,
+				win.w,
+				win.h,
+			)
+			win.tagline.Draw()
+
+			// Main text buffer
+			win.body.Draw()
+		}
+
+		// Update screen with newly drawed content
+		screen.Show()
+
+		// Garbage collect regularly
+		if redrawCount%50 == 0 {
+			runtime.GC()
+		}
+		redrawCount++
+	}
+}

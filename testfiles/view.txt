@@ -1,0 +1,272 @@
+package main
+
+import (
+	"github.com/gdamore/tcell"
+)
+
+type View struct {
+	x, y      int // position
+	w, h      int
+	rows      []int // cursor offset for beginning of each row
+	style     tcell.Style
+	text      *Text
+	scrollpos int // bytes to skip when drawing content
+	opos      int // overflow
+	tabstop   int
+	history   History
+	focused   bool
+	dirty     bool
+}
+
+func (b *View) Write(p []byte) (int, error) {
+	n, err := b.text.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	b.dirty = true
+	return n, err
+}
+
+func (b *View) Delete() (int, error) {
+	// Do not allow deletion beyond what we can see.
+	// This forces the user to scroll to visible content.
+	if b.text.cursorpos == b.scrollpos {
+		return 0, nil //silent return
+	}
+	n, err := b.text.Delete()
+	if err != nil {
+		return n, err
+	}
+
+	b.dirty = true
+
+	return n, nil
+}
+
+func (b *View) SetStyle(style tcell.Style) {
+	b.style = style
+}
+
+func (b *View) Resize(x, y, w, h int) {
+	b.x = x
+	b.y = y
+	b.w = w
+	b.h = h
+}
+
+func (b *View) Size() (x, y, w, h int) {
+	return b.x, b.y, b.w, b.h
+}
+
+// Byte returns the current byte under the cursor.
+func (b *View) Byte() byte {
+	c, _ := b.text.buf.ByteAt(b.text.cursorpos)
+	return c
+}
+
+func (b *View) Overflow() int {
+	return b.opos
+}
+
+func (b *View) Cursor() int {
+	return b.text.cursorpos
+}
+
+func (b *View) SetCursor(pos, whence int) {
+	b.text.SetCursor(pos, whence)
+
+	//	// scroll to cursor if out of screen
+	//	if b.Cursor() < b.scrollpos || b.Cursor() >= b.Overflow() {
+	//		//if b.Cursor() != b.buf.Len() { // do not autoscroll on +1 last byte
+	//		b.ScrollTo(b.Cursor())
+	//		//}
+	//	}
+}
+
+// XYToOffset translates mouse coordinates in a 2D terminal to the correct byte offset in buffer.
+func (b *View) XYToOffset(x, y int) int {
+	offset := b.scrollpos
+
+	for y-b.y > 0 {
+		c, _ := b.text.buf.ByteAt(offset)
+		if c == '\n' {
+			offset++
+			y--
+			continue
+		}
+		xw := 0
+		for ; c != '\n' && xw < b.x+b.w; offset++ {
+			c, _ = b.text.buf.ByteAt(offset)
+			xw++
+		}
+		y--
+	}
+
+	for x-b.x > 0 {
+		c, _ := b.text.buf.ByteAt(offset)
+		if c == '\n' {
+			break
+		}
+		if c == '\t' {
+			x -= b.tabstop - 1
+		}
+		offset++
+		x--
+	}
+
+	return offset
+}
+
+// Scroll will move the visible part of the buffer in number of lines. Negative means upwards.
+func (b *View) Scroll(n int) {
+	offset := 0
+	if n > 0 {
+		for n > 0 {
+			if c, _ := b.text.buf.ByteAt(b.scrollpos + offset); c == '\n' {
+				offset++
+			} else {
+				offset += b.text.NextNL(b.scrollpos+offset) + 1
+			}
+			n--
+		}
+		b.scrollpos += offset
+	}
+
+	if n < 0 {
+		offset += b.text.PrevNL(b.scrollpos)
+		for n < 0 {
+			offset += b.text.PrevNL(b.scrollpos - offset)
+			n++
+		}
+		if b.scrollpos-offset > 0 {
+			b.scrollpos -= offset - 1
+		} else {
+			b.scrollpos = 0
+		}
+	}
+
+	// boundaries
+	if b.scrollpos < 0 {
+		b.scrollpos = 0
+	}
+	if b.scrollpos > b.text.buf.Len() {
+		b.scrollpos = b.text.buf.Len()
+	}
+}
+
+// ScrollTo will scroll to an absolute byte offset in the buffer and backwards to the nearest previous newline.
+func (b *View) ScrollTo(offset int) {
+	offset -= b.text.PrevNL(offset)
+	if offset > 0 {
+		offset += 1
+	}
+	b.scrollpos = offset
+	b.Scroll(-(b.h / 3)) // scroll a third page more for context
+}
+
+func (b *View) Draw() {
+	x, y := b.x, b.y
+
+	// clear
+	for y := b.y; y <= b.h; y++ {
+		for x := b.x; x < b.w; x++ {
+			//draw vertical line separator
+			if b.x > 0 && x == b.x {
+				screen.SetContent(x, y, '|', nil, separatorStyle)
+			} else {
+				screen.SetContent(x, y, ' ', nil, b.style)
+			}
+		}
+	}
+
+	if b.text.buf.Len() > 0 {
+		b.opos = b.scrollpos // keep track of last visible char/overflow
+
+		for i := b.scrollpos; i < b.text.buf.Len(); i++ {
+			// line wrap
+			if x == b.x+b.w {
+				y += 1
+				x = b.x
+			}
+
+			// jump past separator if needed
+			//			if b.x > 0 && x == b.x {
+			//				x++
+			//			}
+
+			// default style
+			style := b.style
+
+			// highlight cursor
+			if i == b.text.cursorpos && b.focused {
+				style = cursorStyle
+			}
+
+			// draw byte from buffer
+			c, err := b.text.buf.ByteAt(i)
+			if err != nil {
+				screen.SetContent(x, y, '?', nil, style)
+				printMsg("index out of range [%d]\n", i)
+				break
+			}
+			switch c {
+			case '\n': // linebreak
+				screen.SetContent(x, y, '\n', nil, style)
+				for j := x + 1; j < b.w; j++ {
+					screen.SetContent(j, y, ' ', nil, defStyle) // fill rest of line with blanks
+				}
+
+				y += 1
+				if y >= b.y+b.h {
+					break
+				}
+				x = b.x + b.w
+				for x > b.x {
+					screen.SetContent(x, y, ' ', nil, b.style)
+					x--
+				}
+			case '\t': // show tab in tabstop width
+				screen.SetContent(x, y, '\t', nil, style)
+				x++
+				for j := 0; j < b.tabstop-1; j++ {
+					screen.SetContent(x, y, ' ', nil, b.style)
+					x++
+				}
+			default:
+				screen.SetContent(x, y, rune(c), nil, style)
+				x += 1
+			}
+
+			b.opos++ // increment last visible char/overflow
+
+			// stop at bottom of box
+			if y >= b.y+b.h {
+				break
+			}
+		}
+	}
+
+	// remove visual cursor clutter and fill out last line
+	for w := b.w; w >= x; w-- {
+		screen.SetContent(w, y, ' ', nil, b.style)
+	}
+
+	// show cursor on EOF
+	if b.text.cursorpos == b.text.buf.Len() && b.focused {
+		screen.SetContent(x, y, ' ', nil, cursorStyle)
+	}
+
+	//	//begin empty lines with tilde, if more than one
+	//	if b.h > 1 {
+	//		y++
+	//		for ; y <= b.y+b.h; y++ {
+	//			screen.SetContent(0, y, '~', nil, defStyle)
+	//			//remove visual trailing clutter on line below
+	//			x = b.x + b.w
+	//			for x > 0 {
+	//				screen.SetContent(x, y, ' ', nil, defStyle)
+	//				x--
+	//			}
+	//		}
+	//	}
+}

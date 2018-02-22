@@ -1,0 +1,229 @@
+package main
+
+import (
+	"unicode"
+
+	"github.com/pkg/errors"
+	"github.com/prodhe/poe/gapbuffer"
+)
+
+type Text struct {
+	buf       *gapbuffer.Buffer
+	cursorpos int
+	p0, p1    int // not implemented
+	history   History
+}
+
+// Sync synchronizes the underlying buffer with the cursor position. This should be called before every call that manipulates data in the buffer.
+func (t *Text) Sync() {
+	t.buf.Seek(t.cursorpos)
+}
+
+func (t *Text) Write(p []byte) (int, error) {
+	c := Change{t.cursorpos, ActionInsert, p}
+	n, err := t.commit(c)
+	if err != nil {
+		return n, err
+	}
+	t.history.Do(c)
+	return n, nil
+}
+
+func (t *Text) Delete() (int, error) {
+	if t.cursorpos <= 0 {
+		return 0, errors.New("out of range")
+	}
+	b, _ := t.buf.ByteAt(t.cursorpos - 1)
+	c := Change{t.cursorpos, ActionDelete, []byte{b}}
+	n, err := t.commit(c)
+	if err != nil {
+		return n, err
+	}
+	t.history.Do(c)
+	return n, nil
+}
+
+func (t *Text) Undo() error {
+	change, err := t.history.Undo()
+	if err != nil {
+		return errors.Wrap(err, "undo")
+	}
+	t.commit(change)
+	return nil
+}
+
+func (t *Text) Redo() error {
+	change, err := t.history.Redo()
+	if err != nil {
+		return errors.Wrap(err, "redo")
+	}
+	t.commit(change)
+	return nil
+}
+
+func (t *Text) commit(c Change) (int, error) {
+	switch c.action {
+	case ActionInsert:
+		t.SetCursor(c.offset, 0)
+		t.Sync()
+		n, err := t.buf.Write(c.content)
+		if err != nil {
+			return 0, err
+		}
+		t.SetCursor(n, 1)
+		return n, err
+	case ActionDelete:
+		t.SetCursor(c.offset, 0)
+		t.Sync()
+		var ds []byte
+		for i := c.offset; i <= c.offset; i++ {
+			ds = append(ds, t.buf.Delete())
+		}
+		t.SetCursor(len(ds), -1)
+		return len(ds), nil
+	default:
+		return 0, errors.New("invalid action in change")
+	}
+}
+
+// WordOffset returns the absolute offset for the beginning of the word and the end. A word is a letter/digit sequence of bytes separated by anything else. It scans from the current cursor position.
+func (t *Text) WordOffset() (start, end int) {
+	start, end = t.cursorpos, t.cursorpos
+	c, _ := t.buf.ByteAt(start)
+	for unicode.IsLetter(rune(c)) || unicode.IsDigit(rune(c)) {
+		start--
+		c, _ = t.buf.ByteAt(start)
+	}
+	if start < t.cursorpos {
+		start++
+	}
+	c, _ = t.buf.ByteAt(end)
+	for unicode.IsLetter(rune(c)) || unicode.IsDigit(rune(c)) {
+		end++
+		c, _ = t.buf.ByteAt(end)
+	}
+	return start, end
+}
+
+// NextNL returns number of bytes from given position to the nearest next new line.
+func (t *Text) NextNL(start int) int {
+	if start >= t.buf.Len() {
+		return 0
+	}
+	n := start
+	offset := 0
+	if c, _ := t.buf.ByteAt(n); c == '\n' {
+		n++
+		offset++
+	}
+	for {
+		c, _ := t.buf.ByteAt(n)
+		if c == '\n' || n >= t.buf.Len() {
+			break
+		}
+		n++
+		offset++
+	}
+	return offset
+}
+
+// PrevNL returns number of bytes from given position to the nearest new line backwards.
+func (t *Text) PrevNL(start int) int {
+	if start == 0 {
+		return 0
+	}
+	if start > t.buf.Len() {
+		start = t.buf.Len() - 1
+	}
+	n := start - 1
+	offset := 1
+	if c, _ := t.buf.ByteAt(n); c == '\n' {
+		return offset
+	}
+	for {
+		c, _ := t.buf.ByteAt(n)
+		if c == '\n' || n == 0 {
+			break
+		}
+		n--
+		offset++
+	}
+	return offset
+}
+
+// SetCursor moves the cursor to different offsets in the text buffer.
+//
+// A negative whence is backwards from current position, a positive whence is forward and a zero whence sets the absolute position from the start of the buffer.
+func (t *Text) SetCursor(pos, whence int) {
+	switch whence {
+	case -1:
+		t.cursorpos -= pos
+	case 0:
+		t.cursorpos = pos
+	case 1:
+		t.cursorpos += pos
+	}
+
+	// check out of range
+	if t.cursorpos < 0 {
+		t.cursorpos = 0
+	}
+	if t.cursorpos >= t.buf.Len() {
+		t.cursorpos = t.buf.Len()
+	}
+}
+
+/* History */
+type Action int
+
+const (
+	ActionInsert Action = iota
+	ActionDelete
+)
+
+type Change struct {
+	offset  int
+	action  Action
+	content []byte
+}
+
+type History struct {
+	done   []Change
+	recall []Change
+}
+
+func (h *History) Do(c Change) {
+	h.done = append(h.done, c)
+	h.recall = nil // clear old recall stack on new do
+}
+
+func (h *History) Undo() (Change, error) {
+	if len(h.done) == 0 {
+		return Change{}, errors.New("no history")
+	}
+	lastdone := h.done[len(h.done)-1]
+	h.recall = append(h.recall, lastdone)
+	h.done = h.done[:len(h.done)-1] // remove last one
+
+	// Reverse the done action so the returned change can be applied directly.
+	switch lastdone.action {
+	case ActionInsert:
+		lastdone.action = ActionDelete
+		lastdone.offset += len(lastdone.content)
+	case ActionDelete:
+		lastdone.action = ActionInsert
+		lastdone.offset -= len(lastdone.content)
+	}
+
+	return lastdone, nil
+}
+
+func (h *History) Redo() (Change, error) {
+	if len(h.recall) == 0 {
+		return Change{}, errors.New("no recall history")
+	}
+	lastrecall := h.recall[len(h.recall)-1]
+	h.done = append(h.done, lastrecall)
+	h.recall = h.recall[:len(h.recall)-1] //remove last one
+	return lastrecall, nil
+}

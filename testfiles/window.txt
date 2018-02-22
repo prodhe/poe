@@ -1,0 +1,304 @@
+package main
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"os"
+	"unicode"
+
+	"github.com/gdamore/tcell"
+	"github.com/pkg/errors"
+	"github.com/prodhe/poe/gapbuffer"
+)
+
+type Window struct {
+	x, y, w, h int
+	body       *View
+	tagline    *View
+	file       *File
+	focused    bool
+	visible    bool
+}
+
+func NewWindow(fn string) *Window {
+	win := &Window{
+		body:    &View{text: &Text{buf: gapbuffer.New()}},
+		tagline: &View{text: &Text{buf: gapbuffer.New()}},
+		file:    &File{name: fn},
+	}
+	win.body.SetStyle(defStyle)
+	win.tagline.SetStyle(tagStyle)
+	win.body.tabstop = 4
+	win.visible = true
+
+	return win
+}
+
+func (win *Window) LoadBuffer() {
+	if win.file.read {
+		return
+	}
+	fh, err := os.OpenFile(win.file.name, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer fh.Close()
+
+	if _, err := io.Copy(win.body.text.buf, fh); err != nil {
+		panic(err)
+	}
+
+	fh.Seek(0, 0)
+
+	h := sha256.New()
+	if _, err := io.Copy(h, fh); err != nil {
+		panic(err)
+	}
+	win.file.sha256 = fmt.Sprintf("%x", h.Sum(nil))
+
+	info, err := fh.Stat()
+	if err != nil {
+		panic(err)
+	}
+	win.file.mtime = info.ModTime()
+
+	win.file.read = true
+
+	win.body.text.SetCursor(0, 0)
+
+}
+
+// SaveFile replaces disk file with buffer content. Returns error if no disk file is set.
+func (win *Window) SaveFile() (int, error) {
+	if win.file.name == "" {
+		return 0, errors.New("no filename")
+	}
+
+	f, err := os.OpenFile(win.file.name, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return 0, errors.Wrap(err, "sha256")
+	}
+	hhex := fmt.Sprintf("%x", h.Sum(nil))
+
+	if hhex != win.file.sha256 {
+		return 0, errors.Errorf("file has been modified outside of poe")
+	}
+
+	n, err := f.WriteAt(win.body.text.buf.Bytes(), 0)
+	if err != nil {
+		return 0, err
+	}
+	f.Truncate(int64(n))
+	f.Sync()
+
+	win.file.sha256 = fmt.Sprintf("%x", sha256.Sum256(win.body.text.buf.Bytes()))
+
+	info, err := f.Stat()
+	if err != nil {
+		return n, err
+	}
+	win.file.mtime = info.ModTime()
+
+	win.body.dirty = false
+
+	return n, nil
+}
+
+// Name returns either the file from disk name or empty string if the buffer has no disk counterpart.
+func (win *Window) Name() string {
+	return win.file.name
+}
+
+// Flags returns the 3 byte tagline flags for the window.
+//
+// 0: modified, ' or blank
+// 1: visible, + or -
+// 2: focused, . or blank
+func (win *Window) Flags() [3]byte {
+	flags := [3]byte{' ', '+', ' '}
+	if win.body.dirty {
+		flags[0] = '\''
+	}
+	if !win.visible {
+		flags[1] = '-'
+	}
+	if win.focused {
+		flags[2] = '.'
+	}
+	return flags
+}
+
+// Resize will set new values for position and width height. Meant to be used on a resize event for proper recalculation during the Draw().
+func (win *Window) Resize(x, y, w, h int) {
+	win.x, win.y, win.w, win.h = x, y, w, h
+
+	win.tagline.Resize(win.x, win.y, win.w, 1)
+	win.body.Resize(win.x, win.y+1, win.w, win.h-2)
+}
+
+// Insert inserts the given byte into the buffer.
+func (win *Window) Insert(b byte) {
+	if _, err := win.body.Write([]byte{b}); err != nil {
+		printMsg("insertion error: %s", err)
+	}
+}
+
+// Remove removes a byte from the buffer.
+func (win *Window) Delete() {
+	if _, err := win.body.Delete(); err != nil {
+		printMsg("deletion error: %s", err)
+	}
+}
+
+func (win *Window) SetFocus(flag bool) {
+	win.focused = flag
+	win.body.focused = flag
+	win.tagline.focused = false
+}
+
+func (win *Window) HandleEvent(ev tcell.Event) {
+	switch ev := ev.(type) {
+	case *tcell.EventKey:
+		key := ev.Key()
+		switch key {
+		case tcell.KeyCR:
+			key = tcell.KeyLF
+		case tcell.KeyRight:
+			win.body.SetCursor(1, 1)
+			return
+		case tcell.KeyLeft:
+			win.body.SetCursor(1, -1)
+			return
+		case tcell.KeyDown:
+			fallthrough
+		case tcell.KeyPgDn:
+			_, _, _, h := win.body.Size()
+			win.body.Scroll(h / 3)
+			return
+		case tcell.KeyUp:
+			fallthrough
+		case tcell.KeyPgUp:
+			_, _, _, h := win.body.Size()
+			win.body.Scroll(-(h / 3))
+			return
+		case tcell.KeyCtrlA: // line start
+			offset := win.body.text.PrevNL(win.body.text.cursorpos)
+			if offset > 1 && win.body.text.cursorpos-offset != 0 {
+				offset -= 1
+			}
+			c, _ := win.body.text.buf.ByteAt(win.body.text.cursorpos - offset)
+			if c == '\n' && offset > 1 {
+				offset -= 1
+			}
+			win.body.text.SetCursor(offset, -1)
+			return
+		case tcell.KeyCtrlE: // line end
+			if win.body.Byte() == '\n' {
+				win.body.text.SetCursor(1, 1)
+				return
+			}
+			offset := win.body.text.NextNL(win.body.text.cursorpos)
+			win.body.text.SetCursor(offset, 1)
+			return
+		case tcell.KeyCtrlU: // delete line backwards
+			offset := win.body.text.PrevNL(win.body.text.cursorpos)
+			if offset > 1 && win.body.text.cursorpos-offset != 0 {
+				offset -= 1
+			}
+			c, _ := win.body.text.buf.ByteAt(win.body.text.cursorpos - offset)
+			if c == '\n' && offset > 1 {
+				offset -= 1
+			}
+			for offset > 0 {
+				win.Delete()
+				offset--
+			}
+			return
+		case tcell.KeyCtrlW: // delete word backwards
+			offset := win.body.text.cursorpos - 1
+			c, _ := win.body.text.buf.ByteAt(offset)
+			if unicode.IsSpace(rune(c)) {
+				if c == '\n' {
+					win.Delete()
+					return
+				}
+				for unicode.IsSpace(rune(c)) && c != '\n' {
+					win.Delete()
+					if win.body.text.cursorpos <= 0 {
+						break
+					}
+					offset--
+					c, _ = win.body.text.buf.ByteAt(offset)
+				}
+			}
+			for !unicode.IsSpace(rune(c)) {
+				win.Delete()
+				if win.body.text.cursorpos <= 0 {
+					break
+				}
+				offset--
+				c, _ = win.body.text.buf.ByteAt(offset)
+			}
+			return
+		case tcell.KeyCtrlSpace:
+			return
+		case tcell.KeyCtrlS: // save
+			_, err := win.SaveFile()
+			if err != nil {
+				printMsg("%s\n", err)
+				return
+			}
+			return
+		case tcell.KeyCtrlG: // file info/statistics
+			printMsg("[0x%.4x %q] [gbuf: %d/%d cap: %d] [cursor: %d overflow: %d] [scroll: %d]\n%v", win.body.Byte(),
+				win.body.Byte(),
+				win.body.text.buf.Pos(),
+				win.body.text.buf.Len(),
+				win.body.text.buf.Cap(),
+				win.body.text.cursorpos,
+				win.body.Overflow(),
+				win.body.scrollpos,
+				win.body.text.history)
+			return
+		case tcell.KeyCtrlZ:
+			win.body.text.Undo()
+			return
+		case tcell.KeyCtrlY:
+			win.body.text.Redo()
+			return
+		case tcell.KeyBackspace2:
+			fallthrough
+		case tcell.KeyCtrlH:
+			win.Delete()
+			return
+		default:
+			// continue
+		}
+
+		// insert
+		if key == tcell.KeyRune {
+			win.Insert(byte(ev.Rune()))
+		} else {
+			win.Insert(byte(key))
+		}
+	}
+}
+
+func AllWindows() []*Window {
+	var ws []*Window
+	for _, col := range cols {
+		ws = append(ws, col.windows...)
+	}
+	return ws
+}
+
+func CurWin() *Window {
+	return AllWindows()[curWin]
+}
