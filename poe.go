@@ -71,8 +71,6 @@ func InitMenu() {
 func InitWorkspace() {
 	workspace = &Workspace{} // first resize event will set proper dimensions
 	workspace.AddCol()
-	//workspace.AddCol()
-	//workspace.LastCol().AddWindow(NewWindow(FnEmptyWin))
 }
 
 // LoadBuffers reads files from disk and loads them into windows. Screen need to be initialized.
