@@ -27,6 +27,9 @@ type Text struct {
 	history  History // undo/redo stack
 }
 
+// Write implements io.Writer, with the side effect of storing written data into a history stack for undo/redo.
+//
+// If dot has content, it will be replaced by an initial deletion before inserting the bytes.
 func (t *Text) Write(p []byte) (int, error) {
 	// handle replace
 	if len(t.ReadDot()) > 0 {
@@ -44,6 +47,7 @@ func (t *Text) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// Delete removes current selection in dot. If dot is empty, it selects the previous rune and deletes that.
 func (t *Text) Delete() (int, error) {
 	if len(t.ReadDot()) == 0 {
 		t.q0--
@@ -81,6 +85,7 @@ func (t *Text) ReadRune() (r rune, size int, err error) {
 	return
 }
 
+// UnreadRune returns the rune before the current Seek offset and moves the offset to point to that. This could be called in sequence to scan backwards.
 func (t *Text) UnreadRune() (r rune, size int, err error) {
 	t.off--
 	r, size, err = t.ReadRuneAt(t.off)
@@ -93,6 +98,8 @@ func (t *Text) UnreadRune() (r rune, size int, err error) {
 }
 
 // ReadRuneAt returns the rune and its size at offset. If the given offset (in byte count) is not a valid rune, it will try to back up until it finds a valid starting point for a rune and return that one.
+//
+// This is basically a Seek(offset) followed by a ReadRune(), but does not affect the internal offset for future reads..
 func (t *Text) ReadRuneAt(offset int) (r rune, size int, err error) {
 	var c byte
 	c, err = t.buf.ByteAt(offset)
@@ -147,7 +154,7 @@ func (t *Text) Dot() (int, int) {
 	return t.q0, t.q1
 }
 
-// Seek implements io.Seeker and sets the internal offset for next ReadRune(). If the offset is not a valid rune start, it will backup until it finds one.
+// Seek implements io.Seeker and sets the internal offset for next ReadRune() or UnreadRune(). If the offset is not a valid rune start, it will backup until it finds one.
 func (t *Text) Seek(offset, whence int) (int, error) {
 	t.off = offset
 
