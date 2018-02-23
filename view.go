@@ -245,7 +245,7 @@ func (b *View) Draw() {
 			case '\t': // show tab until next even tabstop width
 				screen.SetContent(x, y, '\t', nil, style)
 				x++
-				for x%b.tabstop != 0 {
+				for (x-b.x)%b.tabstop != 0 {
 					screen.SetContent(x, y, ' ', nil, fillstyle)
 					x++
 				}
