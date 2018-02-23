@@ -276,6 +276,51 @@ func (t *Text) Select(offset int) {
 	t.SetDot(start, end)
 }
 
+func (t *Text) NextSpace(offset int) (n int) {
+	offset, _ = t.Seek(offset, io.SeekStart)
+
+	r, size, err := t.ReadRune()
+	if err != nil {
+		return 0
+	}
+	for !unicode.IsSpace(r) {
+		n += size
+		r, size, err = t.ReadRune()
+		if err != nil {
+			if err == io.EOF {
+				return n
+			}
+			return 0
+		}
+	}
+
+	return n
+}
+
+func (t *Text) PrevSpace(offset int) (n int) {
+	offset, _ = t.Seek(offset, io.SeekStart)
+
+	r, size, err := t.ReadRuneAt(offset)
+	if err != nil {
+		return 0
+	}
+	for !unicode.IsSpace(r) {
+		r, size, err = t.UnreadRune()
+		if err != nil {
+			if err == gapbuffer.ErrOutOfRange {
+				return n
+			}
+		}
+		n += size
+	}
+
+	if n > 0 {
+		n -= size // remove last iteration
+	}
+
+	return n
+}
+
 func (t *Text) NextWord(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
