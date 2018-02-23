@@ -324,10 +324,19 @@ func (t *Text) PrevSpace(offset int) (n int) {
 func (t *Text) NextWord(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
-	r, size, _ := t.ReadRune()
+	r, size, err := t.ReadRune()
+	if err != nil {
+		return 0
+	}
 	for unicode.IsLetter(r) || unicode.IsDigit(r) {
 		n += size
-		r, size, _ = t.ReadRune()
+		r, size, err = t.ReadRune()
+		if err != nil {
+			if err == io.EOF {
+				return n
+			}
+			return 0
+		}
 	}
 
 	return n
