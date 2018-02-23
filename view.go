@@ -402,30 +402,14 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Delete()
 			return
 		case tcell.KeyCtrlW: // delete word backwards
-			offset := v.text.q0 - 1
-			c, _ := v.text.buf.ByteAt(offset)
-			if unicode.IsSpace(rune(c)) {
-				if c == '\n' {
-					v.Delete()
-					return
-				}
-				for unicode.IsSpace(rune(c)) && c != '\n' {
-					v.Delete()
-					if v.text.q0 <= 0 {
-						break
-					}
-					offset--
-					c, _ = v.text.buf.ByteAt(offset)
-				}
+			startpos := v.Cursor()
+			offset := v.text.PrevWord(v.Cursor())
+			if offset == 0 {
+				v.SetCursor(-1, io.SeekCurrent)
+				offset = v.text.PrevWord(v.Cursor())
 			}
-			for !unicode.IsSpace(rune(c)) {
-				v.Delete()
-				if v.text.q0 <= 0 {
-					break
-				}
-				offset--
-				c, _ = v.text.buf.ByteAt(offset)
-			}
+			v.text.SetDot(v.Cursor()-offset, startpos)
+			v.Delete()
 			return
 		case tcell.KeyCtrlZ:
 			v.text.Undo()
