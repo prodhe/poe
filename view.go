@@ -4,7 +4,6 @@ import (
 	"io"
 	"path/filepath"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
@@ -358,18 +357,12 @@ func (v *View) HandleEvent(ev tcell.Event) {
 		case tcell.KeyCR: // use unix style 0x0A (\n) for new lines
 			key = tcell.KeyLF
 		case tcell.KeyRight:
-			//if ev.Modifiers()&tcell.ModShift != 0 {
-			//	v.text.ExpandDot(1, 1)
-			//} else {
+			_, q1 := v.text.Dot()
+			v.SetCursor(q1, io.SeekStart)
 			v.SetCursor(utf8.RuneLen(v.Rune()), io.SeekCurrent)
-			//}
 			return
 		case tcell.KeyLeft:
-			//if ev.Modifiers()&tcell.ModShift != 0 {
-			//	v.text.ExpandDot(1, -1)
-			//} else {
 			v.SetCursor(-1, io.SeekCurrent)
-			//}
 			return
 		case tcell.KeyDown:
 			fallthrough
