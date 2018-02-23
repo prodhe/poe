@@ -250,33 +250,58 @@ func (t *Text) ExpandDot(q, offset int) {
 	}
 }
 
-// Select expands current dot into something useful. Most likely a word, but if given pos is adjacent to a quote or bracket character, it tries to select into the matching pair.
-func (t *Text) Select(pos int) {
-	start, end := pos, pos
-	c, _ := t.buf.ByteAt(start)
+// Select expands current dot into something useful.
+//
+// If given pos is adjacent to a quote, parenthese, curly brace or bracket, it tries to select into the matching pair.
+//
+// If on newline, select the whole line.
+//
+// Otherwise, select word (longest alphanumeric sequence).
+func (t *Text) Select(offset int) {
+	offset, _ = t.Seek(offset, io.SeekStart)
+	start, end := offset, offset
 
 	// word
-	for unicode.IsLetter(rune(c)) || unicode.IsDigit(rune(c)) {
-		start--
-		c, _ = t.buf.ByteAt(start)
-	}
-	if start < t.q0 {
-		start++
-	}
-	c, _ = t.buf.ByteAt(end)
-	for unicode.IsLetter(rune(c)) || unicode.IsDigit(rune(c)) {
-		end++
-		c, _ = t.buf.ByteAt(end)
-	}
+	start -= t.PrevWord(start)
+	end += t.NextWord(end)
 
 	// return a single char selection if no word was found
 	if start == end {
-		end++
+		t.Seek(offset, io.SeekStart)
+		_, size, _ := t.ReadRune()
+		end += size
 	}
 
 	// Set dot
-	t.q0 = start
-	t.q1 = end
+	t.SetDot(start, end)
+}
+
+func (t *Text) NextWord(offset int) (n int) {
+	offset, _ = t.Seek(offset, io.SeekStart)
+
+	r, size, _ := t.ReadRune()
+	for unicode.IsLetter(r) || unicode.IsDigit(r) {
+		n += size
+		r, size, _ = t.ReadRune()
+	}
+
+	return n
+}
+
+func (t *Text) PrevWord(offset int) (n int) {
+	offset, _ = t.Seek(offset, io.SeekStart)
+
+	r, size, _ := t.ReadRuneAt(offset)
+	for unicode.IsLetter(r) || unicode.IsDigit(r) {
+		r, size, _ = t.UnreadRune()
+		n += size
+	}
+
+	if n > 0 {
+		n -= size // remove last iteration
+	}
+
+	return n
 }
 
 // NextDelim returns number of bytes from given offset up until next delimiter.
