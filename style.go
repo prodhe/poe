@@ -9,9 +9,11 @@ var (
 	bodyHilightStyle tcell.Style
 
 	// tag is the window tag line above the body
-	tagStyle        tcell.Style
-	tagCursorStyle  tcell.Style
-	tagHilightStyle tcell.Style
+	tagStyle               tcell.Style
+	tagCursorStyle         tcell.Style
+	tagHilightStyle        tcell.Style
+	tagSquareStyle         tcell.Style
+	tagSquareModifiedStyle tcell.Style
 
 	// vertline is the vertical line separating columns
 	vertlineStyle tcell.Style
@@ -40,6 +42,10 @@ func InitStyles() {
 		Foreground(tcell.ColorBlack)
 	tagHilightStyle = tagStyle.
 		Background(tcell.NewHexColor(0x8888cc))
+	tagSquareStyle = tagStyle.
+		Background(tcell.NewHexColor(0x8888cc))
+	tagSquareModifiedStyle = tagStyle.
+		Background(tcell.NewHexColor(0x0))
 
 	vertlineStyle = bodyStyle
 }

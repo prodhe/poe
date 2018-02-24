@@ -68,7 +68,7 @@ func NewWindow(fn string) *Window {
 		file: &File{name: fnabs},
 	}
 
-	fmt.Fprintf(win.tagline, "⌘ %s%s Del",
+	fmt.Fprintf(win.tagline, "%s%s Del ",
 		win.Flags(),
 		win.Name(),
 	)
@@ -171,6 +171,10 @@ func (win *Window) SaveFile() (int, error) {
 		return 0, nil
 	}
 
+	if win.isdir {
+		return 0, nil
+	}
+
 	f, err := os.OpenFile(win.NameAbs(), os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return 0, err
@@ -221,14 +225,28 @@ func (win *Window) Name() string {
 }
 
 func (win *Window) NameAbs() string {
+	if win.file.name == FnEmptyWin {
+		return ""
+	}
 	s, _ := filepath.Abs(win.file.name)
 	return s
+}
+
+func (win *Window) NameFromTag() string {
+	tstr := win.tagline.text.String()
+	if tstr == "" {
+		return ""
+	}
+	return strings.Split(tstr, " ")[0]
 }
 
 // Dir returns the working directory of current window, without trailing path separator.
 func (win *Window) Dir() string {
 	if win.isdir {
 		return win.NameAbs()
+	}
+	if win.Name() == FnEmptyWin {
+		return baseDir
 	}
 	return filepath.Dir(win.NameAbs())
 }

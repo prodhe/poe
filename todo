@@ -1,15 +1,13 @@
 jobs / commands
-	async extern exekvering via !<>|
+	async execution via !<>|
 file
-	spara tom buffer med nytt filnamn
+	save empty buffer with tag name
 		check for overwrite
 	overwrite when hash-verify fails on save
 	backup files on disk
 window
-	hide
-	command Get
-view
-	scroll must account for soft wraps
+	hide / collapse
+	command Get (update buffer content)
 text
 	int64 as default in case of large files
 	undvika in-ram buffer - swapfiles?
@@ -18,6 +16,7 @@ text
 	undo
 		unlimited for real (undo undo)
 	cache write Change{} until next action
+	refactor all Next/Prev-funcs
 ---
 visual
 	calculate view percentage on screen

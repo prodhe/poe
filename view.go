@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -92,78 +93,105 @@ func (v *View) SetCursor(pos, whence int) {
 	}
 }
 
-// XYToOffset translates mouse coordinates in a 2D terminal to the correct byte offset in buffer, accounting for rune length and width.
-func (b *View) XYToOffset(x, y int) int {
-	offset := b.scrollpos
+// XYToOffset translates mouse coordinates in a 2D terminal to the correct byte offset in buffer, accounting for rune length, width and tabstops.
+func (v *View) XYToOffset(x, y int) int {
+	offset := v.scrollpos
 
-	// vertical (number of lines)
-	for y-b.y > 0 {
-		r, _, _ := b.text.ReadRuneAt(offset)
+	// vertical (number of visual lines)
+	for y-v.y > 0 {
+		r, _, _ := v.text.ReadRuneAt(offset)
 		if r == '\n' {
 			offset++
 			y--
 			continue
 		}
-		// loop until next line
-		xw := 0
-		for r != '\n' && xw < b.x+b.w {
+		// loop until next line, either new line or soft wrap at end of window width
+		xw := v.x
+		for r != '\n' && xw <= v.x+v.w {
 			var n int
-			r, n, _ = b.text.ReadRuneAt(offset)
+			r, n, _ = v.text.ReadRuneAt(offset)
 			offset += n
 			rw := RuneWidth(r)
-			if rw == 0 {
+			if r == '\t' {
+				rw = v.tabstop - (xw-v.x)%v.tabstop
+			} else if rw == 0 {
 				rw = 1
 			}
+
 			xw += rw
 		}
 		y--
 	}
 
 	// horizontal
-	for x-b.x > 0 {
-		r, n, _ := b.text.ReadRuneAt(offset)
+	xw := v.x // for tabstop count
+	for x-v.x > 0 {
+		r, n, _ := v.text.ReadRuneAt(offset)
 		if r == '\n' {
 			break
 		}
-		if r == '\t' {
-			x -= b.tabstop - 1 // TODO: modulo count
-		}
 		offset += n
 		rw := RuneWidth(r)
-		if rw == 0 {
+		if r == '\t' {
+			rw = v.tabstop - (xw-v.x)%v.tabstop
+		} else if rw == 0 {
 			rw = 1
 		}
+		xw += rw // keep track of tabstop modulo
 		x -= rw
 	}
 
 	return offset
 }
 
-// Scroll will move the visible part of the buffer in number of lines. Negative means upwards.
+// Scroll will move the visible part of the buffer in number of lines, accounting for soft wraps and tabstops. Negative means upwards.
 func (v *View) Scroll(n int) {
 	offset := 0
-	if n > 0 {
+
+	xw := v.x // for tabstop count and soft wrap
+	switch {
+	case n > 0: // downwards, next line
 		for n > 0 {
-			if r, _, _ := v.text.ReadRuneAt(v.scrollpos + offset); r == '\n' {
-				offset++
-			} else {
-				offset += v.text.NextDelim('\n', v.scrollpos+offset) + 1
+			r, size, err := v.text.ReadRuneAt(v.scrollpos + offset)
+			if err != nil {
+				break // hit EOF, stop scrolling
 			}
-			n--
+			offset += size
+
+			rw := RuneWidth(r)
+			if r == '\t' {
+				rw = v.tabstop - (xw-v.x)%v.tabstop
+			} else if rw == 0 {
+				rw = 1
+			}
+			xw += rw
+
+			if r == '\n' || xw > v.x+v.w { // new line or soft wrap
+				n--      // move down
+				xw = v.x // reset soft wrap
+			}
 		}
 		v.scrollpos += offset
-	}
-
-	if n < 0 {
-		offset += v.text.PrevDelim('\n', v.scrollpos)
+	case n < 0: // upwards, previous line
+		// This is kind of ugly, but it relies on the soft wrap
+		// counting in positive scrolling. It will scroll back to the
+		// nearest new line character and then scroll forward again
+		// until the very last iteration, which is the offset for the previous
+		// softwrap/nl.
 		for n < 0 {
-			offset += v.text.PrevDelim('\n', v.scrollpos-offset)
+			start := v.scrollpos                               // save current offset
+			v.scrollpos -= v.text.PrevDelim('\n', v.scrollpos) // scroll back
+			if start-v.scrollpos == 1 {                        // if it was an empty new line, back up one more
+				v.scrollpos -= v.text.PrevDelim('\n', v.scrollpos)
+			}
+			prevlineoffset := v.scrollpos // previous (or one more) new line, may be way back
+
+			for v.scrollpos < start { // scroll one line forward until we're back at current
+				prevlineoffset = v.scrollpos // save offset just before we jump forward again
+				v.Scroll(1)                  // used for the side effect of setting v.scrollpos
+			}
+			v.scrollpos = prevlineoffset
 			n++
-		}
-		if v.scrollpos-offset > 0 {
-			v.scrollpos -= offset - 1
-		} else {
-			v.scrollpos = 0
 		}
 	}
 
@@ -317,7 +345,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				v.mpressed = false
 			}
 		case tcell.Button1:
-			if v.mpressed {
+			if v.mpressed { // select text via click-n-drag
 				if pos > v.mclickpos {
 					v.text.SetDot(v.mclickpos, pos)
 				} else {
@@ -348,6 +376,45 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Scroll(-1)
 		case tcell.WheelDown: // scrolldown
 			v.Scroll(1)
+		case tcell.Button2: // middle click
+			// if we clicked inside a current selection, run that one
+			q0, q1 := v.text.Dot()
+			if pos >= q0 && pos <= q1 && q0 != q1 {
+				RunCommand(v.text.ReadDot())
+				return
+			}
+
+			// otherwise, select non-space chars under mouse and run that
+			p := pos - v.text.PrevSpace(pos)
+			n := pos + v.text.NextSpace(pos)
+			v.text.SetDot(p, n)
+			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+			v.text.SetDot(q0, q1)
+			RunCommand(fn)
+			return
+		case tcell.Button3: // right click
+			// if we clicked inside a current selection, open that one
+			q0, q1 := v.text.Dot()
+			if pos >= q0 && pos <= q1 && q0 != q1 {
+				CmdOpen(v.text.ReadDot())
+				return
+			}
+
+			// otherwise, select everything inside surround spaces and open that
+			p := pos - v.text.PrevSpace(pos)
+			n := pos + v.text.NextSpace(pos)
+			v.text.SetDot(p, n)
+			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+			v.text.SetDot(q0, q1)
+			if fn == "" { // if it is still blank, abort
+				return
+			}
+			if fn != "" && fn[0] != filepath.Separator {
+				fn = CurWin.Dir() + string(filepath.Separator) + fn
+				fn = filepath.Clean(fn)
+			}
+			CmdOpen(fn)
+			return
 		default:
 			printMsg("%#v", btn)
 		}
@@ -390,6 +457,9 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.SetCursor(offset, io.SeekCurrent)
 			return
 		case tcell.KeyCtrlU: // delete line backwards
+			if v.text.ReadDot() != "" {
+				v.Delete() // delete current selection first
+			}
 			offset := v.text.PrevDelim('\n', v.Cursor())
 			if offset > 1 && v.Cursor()-offset != 0 {
 				offset -= 1
@@ -402,6 +472,9 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Delete()
 			return
 		case tcell.KeyCtrlW: // delete word backwards
+			if v.text.ReadDot() != "" {
+				v.Delete() // delete current selection first
+			}
 			startpos := v.Cursor()
 			offset := v.text.PrevWord(v.Cursor())
 			if offset == 0 {
@@ -423,23 +496,44 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Delete()
 			return
 		case tcell.KeyCtrlG: // file info/statistics
-			printMsg("0x%.4x %q %d,%d/%d\noverflow: %d scroll: %d\ndot: %q\nprev nl: %d\n",
+			printMsg("0x%.4x %q %d,%d/%d\nbasedir: %s\nwindir: %s\n\nname: %s\nnameabs: %s\ntagname: %s\n",
 				v.Rune(), v.Rune(),
 				v.text.q0, v.text.q1, v.text.Len(),
-				v.opos, v.scrollpos,
-				v.text.ReadDot(),
-				v.text.PrevDelim('\n', v.Cursor()))
+				baseDir, CurWin.Dir(), CurWin.Name(), CurWin.NameAbs(), CurWin.NameFromTag())
 			return
 		case tcell.KeyCtrlO: // open file/dir
 			fn := v.text.ReadDot()
-			if fn != FnEmptyWin && fn[0] != filepath.Separator {
+			if fn == "" { // select all non-space characters
+				curpos := v.Cursor()
+				p := curpos - v.text.PrevSpace(curpos)
+				n := curpos + v.text.NextSpace(curpos)
+				v.text.SetDot(p, n)
+				fn = strings.Trim(v.text.ReadDot(), "\n\t ")
+				v.SetCursor(curpos, io.SeekStart)
+				if fn == "" { // if it is still blank, abort
+					return
+				}
+			}
+			if fn != "" && fn[0] != filepath.Separator {
 				fn = CurWin.Dir() + string(filepath.Separator) + fn
 				fn = filepath.Clean(fn)
 			}
 			CmdOpen(fn)
 			return
 		case tcell.KeyCtrlR: // run command in dot
-			RunCommand(v.text.ReadDot())
+			cmd := v.text.ReadDot()
+			if cmd == "" { // select all non-space characters
+				curpos := v.Cursor()
+				p := curpos - v.text.PrevSpace(curpos)
+				n := curpos + v.text.NextSpace(curpos)
+				v.text.SetDot(p, n)
+				cmd = strings.Trim(v.text.ReadDot(), "\n\t ")
+				v.SetCursor(curpos, io.SeekStart)
+				if cmd == "" { // if it is still blank, abort
+					return
+				}
+			}
+			RunCommand(cmd)
 			return
 		case tcell.KeyCtrlC: // copy to clipboard
 			if err := clipboard.WriteAll(v.text.ReadDot()); err != nil {

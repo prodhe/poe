@@ -74,6 +74,11 @@ func (t *Text) Len() int {
 	return t.buf.Len()
 }
 
+// String returns the entire text buffer as a string.
+func (t *Text) String() string {
+	return string(t.buf.Bytes())
+}
+
 // ReadRune reads a rune from buffer and advances the internal offset. This could be called in sequence to get all runes from buffer. This populates LastRune().
 func (t *Text) ReadRune() (r rune, size int, err error) {
 	r, size, err = t.ReadRuneAt(t.off)
@@ -260,6 +265,10 @@ func (t *Text) ExpandDot(q, offset int) {
 func (t *Text) Select(offset int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 	start, end := offset, offset
+
+	// space
+	//start -= t.PrevSpace(start)
+	//end += t.NextSpace(end)
 
 	// word
 	start -= t.PrevWord(start)

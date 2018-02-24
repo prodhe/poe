@@ -37,15 +37,11 @@ func RunCommand(input string) {
 
 	// Edit shortcuts for external commands and piping
 	switch input[0] {
-	case '!':
-		fallthrough
-	case '<':
-		fallthrough
-	case '>':
-		fallthrough
-	case '|':
+	case '!', '<', '>', '|':
 		CmdEdit(input)
 	}
+
+	CmdEdit("!" + input)
 }
 
 func CmdExit(args string) {
@@ -116,7 +112,7 @@ func CmdEdit(args string) {
 		// if command produced output, print it
 		outstr := string(out)
 		if outstr != "" {
-			printMsg("%s\n", outstr)
+			printMsg("%s", outstr)
 		}
 	default:
 		printMsg("?\n")
