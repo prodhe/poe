@@ -26,6 +26,8 @@ Everything is text and everything is editable. There are two ways to interact wi
 
 `^S` saves current buffer to disk.
 
+`^Z` undo, `^Y` redo.
+
 ### Commands
 
 `New` opens an empty window.
