@@ -16,7 +16,7 @@ Binary distribution may or not be available. As of now, the source should do jus
 
 ## Usage
 
-`^Q` exits.
+Use the mouse. `^Q` exits.
 
 Everything is text and everything is editable. There are two ways to interact with text, `Run` or `Open`.
 
