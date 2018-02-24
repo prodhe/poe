@@ -1,6 +1,6 @@
 # poe
 
-My very own acme-inspired terminal text editor.
+My very own [acme](http://acme.cat-v.org/)-inspired terminal text editor.
 
 Because everything else is Not Invented Here.
 
