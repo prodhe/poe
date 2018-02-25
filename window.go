@@ -156,27 +156,40 @@ func (win *Window) LoadBuffer() bool {
 	win.file.mtime = info.ModTime()
 	win.file.read = true
 
-	win.body.SetCursor(0, 0)
+	win.body.SetCursor(0, io.SeekStart)
 
 	return true
 }
 
 // SaveFile replaces disk file with buffer content. Returns error if no disk file is set.
 func (win *Window) SaveFile() (int, error) {
-	if win.file.name == FnEmptyWin {
+	if win.NameTag() == FnEmptyWin {
 		return 0, errors.New("no filename")
 	}
 
-	if win.Name() == FnMessageWin {
+	if win.Name() == FnMessageWin { // can not save +poe window
 		return 0, nil
 	}
 
-	if win.isdir {
+	// TODO: check this in real time in case of tag name change...
+	if win.isdir { // can not save a directory
 		return 0, nil
 	}
 
-	f, err := os.OpenFile(win.NameAbs(), os.O_RDWR|os.O_CREATE, 0644)
+	// check for file existence if we recently changed the file name
+	openmasks := os.O_RDWR | os.O_CREATE
+	var namechange bool
+	if win.Name() != win.NameTag() { // user has changed name
+		openmasks |= os.O_EXCL // must not already exist
+		namechange = true      // to skip sha256 checksum
+	}
+
+	f, err := os.OpenFile(win.NameTag(), openmasks, 0644)
 	if err != nil {
+		if os.IsExist(err) {
+			printMsg("%s already exists\n", win.NameTag())
+			return 0, nil
+		}
 		return 0, err
 	}
 	defer f.Close()
@@ -187,7 +200,8 @@ func (win *Window) SaveFile() (int, error) {
 	}
 	hhex := fmt.Sprintf("%x", h.Sum(nil))
 
-	if hhex != win.file.sha256 {
+	// verify checksum if the file is not newly created via a namechange
+	if !namechange && hhex != win.file.sha256 {
 		return 0, errors.Errorf("file has been modified outside of poe")
 	}
 
@@ -232,7 +246,7 @@ func (win *Window) NameAbs() string {
 	return s
 }
 
-func (win *Window) NameFromTag() string {
+func (win *Window) NameTag() string {
 	tstr := win.tagline.text.String()
 	if tstr == "" {
 		return ""

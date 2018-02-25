@@ -99,7 +99,14 @@ func (v *View) XYToOffset(x, y int) int {
 
 	// vertical (number of visual lines)
 	for y-v.y > 0 {
-		r, _, _ := v.text.ReadRuneAt(offset)
+		r, _, err := v.text.ReadRuneAt(offset)
+		if err != nil {
+			if err == io.EOF {
+				return v.text.Len()
+			}
+			printMsg("%s\n", err)
+			return 0
+		}
 		if r == '\n' {
 			offset++
 			y--
@@ -126,7 +133,14 @@ func (v *View) XYToOffset(x, y int) int {
 	// horizontal
 	xw := v.x // for tabstop count
 	for x-v.x > 0 {
-		r, n, _ := v.text.ReadRuneAt(offset)
+		r, n, err := v.text.ReadRuneAt(offset)
+		if err != nil {
+			if err == io.EOF {
+				return v.text.Len()
+			}
+			printMsg("%s\n", err)
+			return 0
+		}
 		if r == '\n' {
 			break
 		}
@@ -154,7 +168,11 @@ func (v *View) Scroll(n int) {
 		for n > 0 {
 			r, size, err := v.text.ReadRuneAt(v.scrollpos + offset)
 			if err != nil {
-				break // hit EOF, stop scrolling
+				v.scrollpos = v.text.Len()
+				if err == io.EOF {
+					break // hit EOF, stop scrolling
+				}
+				return
 			}
 			offset += size
 
@@ -181,7 +199,7 @@ func (v *View) Scroll(n int) {
 		for n < 0 {
 			start := v.scrollpos                               // save current offset
 			v.scrollpos -= v.text.PrevDelim('\n', v.scrollpos) // scroll back
-			if start-v.scrollpos == 1 {                        // if it was an empty new line, back up one more
+			if start-v.scrollpos == 1 {                        // if it was just a new line, back up one more
 				v.scrollpos -= v.text.PrevDelim('\n', v.scrollpos)
 			}
 			prevlineoffset := v.scrollpos // previous (or one more) new line, may be way back
@@ -337,7 +355,6 @@ func (v *View) HandleEvent(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventMouse:
 		mx, my := ev.Position()
-		pos := v.XYToOffset(mx, my)
 
 		switch btn := ev.Buttons(); btn {
 		case tcell.ButtonNone: // on button release
@@ -345,6 +362,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				v.mpressed = false
 			}
 		case tcell.Button1:
+			pos := v.XYToOffset(mx, my)
 			if v.mpressed { // select text via click-n-drag
 				if pos > v.mclickpos {
 					v.text.SetDot(v.mclickpos, pos)
@@ -358,10 +376,51 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.mpressed = true
 			v.mclickpos = pos
 
-			if ev.Modifiers()&tcell.ModAlt != 0 {
-				RunCommand(v.text.ReadDot())
+			if ev.Modifiers()&tcell.ModAlt != 0 { // identic code to Btn2
+				pos := v.XYToOffset(mx, my)
+				// if we clicked inside a current selection, run that one
+				q0, q1 := v.text.Dot()
+				if pos >= q0 && pos <= q1 && q0 != q1 {
+					RunCommand(v.text.ReadDot())
+					return
+				}
+
+				// otherwise, select non-space chars under mouse and run that
+				p := pos - v.text.PrevSpace(pos)
+				n := pos + v.text.NextSpace(pos)
+				v.text.SetDot(p, n)
+				fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+				v.text.SetDot(q0, q1)
+				RunCommand(fn)
 				return
 			}
+
+			if ev.Modifiers()&tcell.ModCtrl != 0 { // identic code to Btn3
+				pos := v.XYToOffset(mx, my)
+				// if we clicked inside a current selection, open that one
+				q0, q1 := v.text.Dot()
+				if pos >= q0 && pos <= q1 && q0 != q1 {
+					CmdOpen(v.text.ReadDot())
+					return
+				}
+
+				// otherwise, select everything inside surround spaces and open that
+				p := pos - v.text.PrevSpace(pos)
+				n := pos + v.text.NextSpace(pos)
+				v.text.SetDot(p, n)
+				fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+				v.text.SetDot(q0, q1)
+				if fn == "" { // if it is still blank, abort
+					return
+				}
+				if fn != "" && fn[0] != filepath.Separator {
+					fn = CurWin.Dir() + string(filepath.Separator) + fn
+					fn = filepath.Clean(fn)
+				}
+				CmdOpen(fn)
+				return
+			}
+
 			elapsed := ev.When().Sub(v.mclicktime) / time.Millisecond
 
 			if elapsed < ClickThreshold {
@@ -377,6 +436,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 		case tcell.WheelDown: // scrolldown
 			v.Scroll(1)
 		case tcell.Button2: // middle click
+			pos := v.XYToOffset(mx, my)
 			// if we clicked inside a current selection, run that one
 			q0, q1 := v.text.Dot()
 			if pos >= q0 && pos <= q1 && q0 != q1 {
@@ -393,6 +453,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			RunCommand(fn)
 			return
 		case tcell.Button3: // right click
+			pos := v.XYToOffset(mx, my)
 			// if we clicked inside a current selection, open that one
 			q0, q1 := v.text.Dot()
 			if pos >= q0 && pos <= q1 && q0 != q1 {
@@ -499,7 +560,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			printMsg("0x%.4x %q %d,%d/%d\nbasedir: %s\nwindir: %s\n\nname: %s\nnameabs: %s\ntagname: %s\n",
 				v.Rune(), v.Rune(),
 				v.text.q0, v.text.q1, v.text.Len(),
-				baseDir, CurWin.Dir(), CurWin.Name(), CurWin.NameAbs(), CurWin.NameFromTag())
+				baseDir, CurWin.Dir(), CurWin.Name(), CurWin.NameAbs(), CurWin.NameTag())
 			return
 		case tcell.KeyCtrlO: // open file/dir
 			fn := v.text.ReadDot()

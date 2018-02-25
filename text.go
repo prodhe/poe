@@ -82,9 +82,6 @@ func (t *Text) String() string {
 // ReadRune reads a rune from buffer and advances the internal offset. This could be called in sequence to get all runes from buffer. This populates LastRune().
 func (t *Text) ReadRune() (r rune, size int, err error) {
 	r, size, err = t.ReadRuneAt(t.off)
-	if err != nil {
-		return 0, 0, err
-	}
 	t.off += size
 	t.lastRune = r
 	return
@@ -96,7 +93,7 @@ func (t *Text) UnreadRune() (r rune, size int, err error) {
 	r, size, err = t.ReadRuneAt(t.off)
 	t.off++
 	if err != nil {
-		return 0, 0, err
+		return
 	}
 	t.off -= size
 	return
@@ -104,7 +101,7 @@ func (t *Text) UnreadRune() (r rune, size int, err error) {
 
 // ReadRuneAt returns the rune and its size at offset. If the given offset (in byte count) is not a valid rune, it will try to back up until it finds a valid starting point for a rune and return that one.
 //
-// This is basically a Seek(offset) followed by a ReadRune(), but does not affect the internal offset for future reads..
+// This is basically a Seek(offset) followed by a ReadRune(), but does not affect the internal offset for future reads.
 func (t *Text) ReadRuneAt(offset int) (r rune, size int, err error) {
 	var c byte
 	c, err = t.buf.ByteAt(offset)

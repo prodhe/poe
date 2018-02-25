@@ -20,13 +20,17 @@ Use the mouse. `^Q` exits.
 
 Everything is text and everything is editable. There are two ways to interact with text, `Run` or `Open`.
 
-`Open` (`^O` or right-click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
+`Open` (`^O`, right-click or Ctrl+Click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
 
-`Run` (`^R` or middle-click) interprets the text as a command, which can be an internal poe command like `New` or `Del`. If none is found, it does nothing.
+`Run` (`^R`, middle-click or Alt+Click) interprets the text as a command, which can be an internal poe command like `New` or `Del`. If none is found, it does nothing.
 
-`^S` saves current buffer to disk.
+`^S` saves current buffer to disk. You can change the name by edit the tagline.
 
 `^Z` undo, `^Y` redo.
+
+`^W` deletes word backwards.
+
+`^U` deletes to beginning of line.
 
 ### Commands
 
@@ -38,7 +42,7 @@ Everything is text and everything is editable. There are two ways to interact wi
 
 `Exit` closes all windows and exits the program.
 
-`!date` executes `date` as a shell command and presents its output in the message window named `+poe`.
+Run command on `date` executes `date` as a shell command and presents its output in the message window named `+poe`. Or `pwd`, or `ls -l`, or `curl google.se`, or... you get the idea.
 
 ## Bugs
 
