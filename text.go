@@ -9,11 +9,7 @@ import (
 	"github.com/prodhe/poe/gapbuffer"
 )
 
-const (
-	DirForward uint8 = iota
-	DirBackward
-	DirAbsolute
-)
+type Buffer struct{}
 
 // Text is a buffer for editing. It uses an underlying gap buffer for storage and manages all things text related, like insert, delete, selection, searching and undo/redo.
 //

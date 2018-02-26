@@ -45,7 +45,7 @@ func InitStyles() {
 	tagSquareStyle = tagStyle.
 		Background(tcell.NewHexColor(0x8888cc))
 	tagSquareModifiedStyle = tagStyle.
-		Background(tcell.NewHexColor(0x0))
+		Background(tcell.NewHexColor(0x2222cc))
 
 	vertlineStyle = bodyStyle
 }

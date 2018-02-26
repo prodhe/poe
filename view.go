@@ -395,7 +395,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				return
 			}
 
-			if ev.Modifiers()&tcell.ModCtrl != 0 { // identic code to Btn3
+			if ev.Modifiers()&tcell.ModShift != 0 { // identic code to Btn3
 				pos := v.XYToOffset(mx, my)
 				// if we clicked inside a current selection, open that one
 				q0, q1 := v.text.Dot()
@@ -429,6 +429,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			} else {
 				// single click
 				v.SetCursor(pos, 0)
+				//screen.ShowCursor(3, 3)
 			}
 			v.mclicktime = ev.When()
 		case tcell.WheelUp: // scrollup
@@ -597,7 +598,11 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			RunCommand(cmd)
 			return
 		case tcell.KeyCtrlC: // copy to clipboard
-			if err := clipboard.WriteAll(v.text.ReadDot()); err != nil {
+			str := v.text.ReadDot()
+			if str == "" {
+				return
+			}
+			if err := clipboard.WriteAll(str); err != nil {
 				printMsg("%s\n", err)
 			}
 			return

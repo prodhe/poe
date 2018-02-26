@@ -20,7 +20,7 @@ Use the mouse. `^Q` exits.
 
 Everything is text and everything is editable. There are two ways to interact with text, `Run` or `Open`.
 
-`Open` (`^O`, right-click or Ctrl+Click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
+`Open` (`^O`, right-click or Shift+Click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
 
 `Run` (`^R`, middle-click or Alt+Click) interprets the text as a command, which can be an internal poe command like `New` or `Del`. If none is found, it does nothing.
 

@@ -280,7 +280,7 @@ func (win *Window) Flags() string {
 func (win *Window) Resize(x, y, w, h int) {
 	win.x, win.y, win.w, win.h = x, y, w, h
 
-	win.tagline.Resize(win.x, win.y, win.w, 1)
+	win.tagline.Resize(win.x+3, win.y, win.w-3, 1) // 3 for tagbox
 	win.body.Resize(win.x, win.y+1, win.w, win.h-1)
 }
 
@@ -320,6 +320,15 @@ func (win *Window) HandleEvent(ev tcell.Event) {
 }
 
 func (win *Window) Draw() {
+	// Draw tag square
+	boxstyle := tagSquareStyle
+	if win.body.dirty {
+		boxstyle = tagSquareModifiedStyle
+	}
+	screen.SetContent(win.x, win.y, ' ', nil, boxstyle)
+	screen.SetContent(win.x+1, win.y, ' ', nil, boxstyle)
+	screen.SetContent(win.x+2, win.y, ' ', nil, win.tagline.style)
+
 	// Tagline
 	win.tagline.Draw()
 
