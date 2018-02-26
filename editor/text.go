@@ -1,7 +1,12 @@
-package main
+package editor
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"unicode"
 	"unicode/utf8"
 
@@ -9,13 +14,20 @@ import (
 	"github.com/prodhe/poe/gapbuffer"
 )
 
-type Buffer struct{}
+const (
+	BufferScratch uint8 = iota
+	BufferFile
+	BufferDir
+)
 
-// Text is a buffer for editing. It uses an underlying gap buffer for storage and manages all things text related, like insert, delete, selection, searching and undo/redo.
+// Buffer is a buffer for editing. It uses an underlying gap buffer for storage and manages all things text related, like insert, delete, selection, searching and undo/redo.
 //
-// Although the underlying buffer is a pure byte slice, Text only works with runes and UTF-8.
-type Text struct {
+// Although the underlying buffer is a pure byte slice, Buffer only works with runes and UTF-8.
+type Buffer struct {
 	buf      *gapbuffer.Buffer
+	file     *File
+	what     uint8
+	dirty    bool
 	q0, q1   int     // dot/cursor
 	off      int     // offset for reading runes in buffer
 	lastRune rune    // save the last read rune
@@ -23,10 +35,164 @@ type Text struct {
 	history  History // undo/redo stack
 }
 
+func (t *Buffer) initBuffer() {
+	if t.buf == nil {
+		t.buf = &gapbuffer.Buffer{}
+	}
+}
+
+func (t *Buffer) NewFile(fn string) {
+	t.file = &File{name: fn}
+}
+
+func (t *Buffer) ReadFile() error {
+	t.initBuffer()
+
+	if t.file == nil || t.file.read {
+		return nil // silent
+	}
+
+	info, err := os.Stat(t.file.name)
+	if err != nil {
+		// if the file exists, print why we could not open it
+		// otherwise just close silently
+		if os.IsExist(err) {
+			return fmt.Errorf("%s", err)
+		}
+		return err
+	}
+
+	// name is a directory; list it's content into the buffer
+	if info.IsDir() {
+		files, err := ioutil.ReadDir(t.file.name)
+		if err != nil {
+			return fmt.Errorf("%s", err)
+		}
+
+		t.what = BufferDir
+
+		// list files in dir
+		for _, f := range files {
+			dirchar := ""
+			if f.IsDir() {
+				dirchar = string(filepath.Separator)
+			}
+			fmt.Fprintf(t.buf, "%s%s\n", f.Name(), dirchar)
+		}
+		return nil
+	}
+
+	// name is a file
+	fh, err := os.OpenFile(t.file.name, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("%s", err)
+	}
+	defer fh.Close()
+
+	if _, err := io.Copy(t.buf, fh); err != nil {
+		return fmt.Errorf("%s", err)
+	}
+	fh.Seek(0, 0)
+
+	h := sha256.New()
+	if _, err := io.Copy(h, fh); err != nil {
+		return fmt.Errorf("%s", err)
+	}
+	t.file.sha256 = fmt.Sprintf("%x", h.Sum(nil))
+
+	t.file.mtime = info.ModTime()
+	t.file.read = true
+
+	t.what = BufferFile
+
+	return nil
+}
+
+func (t *Buffer) SaveFile() (int, error) {
+	t.initBuffer()
+
+	if t.file == nil || t.file.name == "" {
+		return 0, errors.New("no filename")
+	}
+
+	if t.what != BufferFile { // can only save file buffers
+		return 0, nil
+	}
+
+	// check for file existence if we recently changed the file name
+	//	openmasks := os.O_RDWR | os.O_CREATE
+	//	var namechange bool
+	//	if win.Name() != win.NameTag() { // user has changed name
+	//		openmasks |= os.O_EXCL // must not already exist
+	//		namechange = true      // to skip sha256 checksum
+	//	}
+
+	f, err := os.OpenFile(t.file.name, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			return 0, fmt.Errorf("%s already exists", t.file.name)
+		}
+		return 0, err
+	}
+	defer f.Close()
+
+	//h := sha256.New()
+	//if _, err := io.Copy(h, f); err != nil {
+	//	return 0, errors.Wrap(err, "sha256")
+	//}
+	//hhex := fmt.Sprintf("%x", h.Sum(nil))
+
+	// verify checksum if the file is not newly created via a namechange
+	//	if !namechange && hhex != win.file.sha256 {
+	//		return 0, errors.Errorf("file has been modified outside of poe")
+	//	}
+
+	n, err := f.WriteAt(t.buf.Bytes(), 0)
+	if err != nil {
+		return 0, err
+	}
+	f.Truncate(int64(n))
+	f.Sync()
+
+	t.file.sha256 = fmt.Sprintf("%x", sha256.Sum256(t.buf.Bytes()))
+
+	info, err := f.Stat()
+	if err != nil {
+		return n, err
+	}
+	t.file.mtime = info.ModTime()
+
+	t.dirty = false
+
+	return n, nil
+}
+
+// Name returns either the file from disk name or empty string if the buffer has no disk counterpart.
+func (t *Buffer) Name() string {
+	if t.file == nil || t.file.name == "" {
+		return ""
+	}
+	s, _ := filepath.Abs(t.file.name)
+	return s
+}
+
+func (t *Buffer) WorkDir() string {
+	switch t.what {
+	case BufferFile, BufferScratch:
+		return filepath.Dir(t.Name())
+	case BufferDir:
+		return t.Name()
+	default:
+		return ""
+	}
+}
+
 // Write implements io.Writer, with the side effect of storing written data into a history stack for undo/redo.
 //
 // If dot has content, it will be replaced by an initial deletion before inserting the bytes.
-func (t *Text) Write(p []byte) (int, error) {
+func (t *Buffer) Write(p []byte) (int, error) {
+	t.initBuffer()
+
 	// handle replace
 	if len(t.ReadDot()) > 0 {
 		t.Delete()
@@ -44,7 +210,9 @@ func (t *Text) Write(p []byte) (int, error) {
 }
 
 // Delete removes current selection in dot. If dot is empty, it selects the previous rune and deletes that.
-func (t *Text) Delete() (int, error) {
+func (t *Buffer) Delete() (int, error) {
+	t.initBuffer()
+
 	if len(t.ReadDot()) == 0 {
 		t.q0--
 		c, _ := t.buf.ByteAt(t.q0)
@@ -66,17 +234,21 @@ func (t *Text) Delete() (int, error) {
 }
 
 // Len returns the number of bytes in buffer.
-func (t *Text) Len() int {
+func (t *Buffer) Len() int {
+	t.initBuffer()
+
 	return t.buf.Len()
 }
 
 // String returns the entire text buffer as a string.
-func (t *Text) String() string {
+func (t *Buffer) String() string {
+	t.initBuffer()
+
 	return string(t.buf.Bytes())
 }
 
 // ReadRune reads a rune from buffer and advances the internal offset. This could be called in sequence to get all runes from buffer. This populates LastRune().
-func (t *Text) ReadRune() (r rune, size int, err error) {
+func (t *Buffer) ReadRune() (r rune, size int, err error) {
 	r, size, err = t.ReadRuneAt(t.off)
 	t.off += size
 	t.lastRune = r
@@ -84,7 +256,7 @@ func (t *Text) ReadRune() (r rune, size int, err error) {
 }
 
 // UnreadRune returns the rune before the current Seek offset and moves the offset to point to that. This could be called in sequence to scan backwards.
-func (t *Text) UnreadRune() (r rune, size int, err error) {
+func (t *Buffer) UnreadRune() (r rune, size int, err error) {
 	t.off--
 	r, size, err = t.ReadRuneAt(t.off)
 	t.off++
@@ -98,7 +270,9 @@ func (t *Text) UnreadRune() (r rune, size int, err error) {
 // ReadRuneAt returns the rune and its size at offset. If the given offset (in byte count) is not a valid rune, it will try to back up until it finds a valid starting point for a rune and return that one.
 //
 // This is basically a Seek(offset) followed by a ReadRune(), but does not affect the internal offset for future reads.
-func (t *Text) ReadRuneAt(offset int) (r rune, size int, err error) {
+func (t *Buffer) ReadRuneAt(offset int) (r rune, size int, err error) {
+	t.initBuffer()
+
 	var c byte
 	c, err = t.buf.ByteAt(offset)
 	if err != nil {
@@ -129,31 +303,34 @@ func (t *Text) ReadRuneAt(offset int) (r rune, size int, err error) {
 }
 
 // LastRune returns the last rune read by ReadRune().
-func (t *Text) LastRune() rune {
+func (t *Buffer) LastRune() rune {
 	return t.lastRune
 }
 
 // ReadDot returns content of current dot.
-func (t *Text) ReadDot() string {
+func (t *Buffer) ReadDot() string {
+	t.initBuffer()
+
 	if t.q0 == t.q1 {
 		return ""
 	}
 	buf := make([]byte, t.q1-t.q0)
 	_, err := t.buf.ReadAt(buf, t.q0)
 	if err != nil {
-		printMsg("dot: %s", err)
 		return ""
 	}
 	return string(buf)
 }
 
 // Dot returns current offsets for dot.
-func (t *Text) Dot() (int, int) {
+func (t *Buffer) Dot() (int, int) {
 	return t.q0, t.q1
 }
 
 // Seek implements io.Seeker and sets the internal offset for next ReadRune() or UnreadRune(). If the offset is not a valid rune start, it will backup until it finds one.
-func (t *Text) Seek(offset, whence int) (int, error) {
+func (t *Buffer) Seek(offset, whence int) (int, error) {
+	t.initBuffer()
+
 	t.off = offset
 
 	switch whence {
@@ -177,7 +354,7 @@ func (t *Text) Seek(offset, whence int) (int, error) {
 }
 
 // SeekDot sets the dot to a single offset in the text buffer.
-func (t *Text) SeekDot(offset, whence int) (int, error) {
+func (t *Buffer) SeekDot(offset, whence int) (int, error) {
 	switch whence {
 	case io.SeekStart:
 		q0, _, err := t.SetDot(offset, offset)
@@ -194,7 +371,9 @@ func (t *Text) SeekDot(offset, whence int) (int, error) {
 }
 
 // SetDot sets both ends of the dot into an absolute position. It will check the given offsets and adjust them accordingly, so they are not out of bounds or on an invalid rune start. It returns the final offsets. Error is always nil.
-func (t *Text) SetDot(q0, q1 int) (int, int, error) {
+func (t *Buffer) SetDot(q0, q1 int) (int, int, error) {
+	t.initBuffer()
+
 	t.q0, t.q1 = q0, q1
 
 	// check out of bounds
@@ -236,7 +415,7 @@ func (t *Text) SetDot(q0, q1 int) (int, int, error) {
 }
 
 // ExpandDot expands the current selection in positive or negative offset. A positive offset expands forwards and a negative expands backwards. Q is 0 or 1, either the left or the right end of the dot.
-func (t *Text) ExpandDot(q, offset int) {
+func (t *Buffer) ExpandDot(q, offset int) {
 	if q < 0 || q > 1 {
 		return
 	}
@@ -255,7 +434,7 @@ func (t *Text) ExpandDot(q, offset int) {
 // If on newline, select the whole line.
 //
 // Otherwise, select word (longest alphanumeric sequence).
-func (t *Text) Select(offset int) {
+func (t *Buffer) Select(offset int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 	start, end := offset, offset
 
@@ -278,7 +457,7 @@ func (t *Text) Select(offset int) {
 	t.SetDot(start, end)
 }
 
-func (t *Text) NextSpace(offset int) (n int) {
+func (t *Buffer) NextSpace(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
 	r, size, err := t.ReadRune()
@@ -299,7 +478,7 @@ func (t *Text) NextSpace(offset int) (n int) {
 	return n
 }
 
-func (t *Text) PrevSpace(offset int) (n int) {
+func (t *Buffer) PrevSpace(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
 	r, size, err := t.ReadRuneAt(offset)
@@ -323,7 +502,7 @@ func (t *Text) PrevSpace(offset int) (n int) {
 	return n
 }
 
-func (t *Text) NextWord(offset int) (n int) {
+func (t *Buffer) NextWord(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
 	r, size, err := t.ReadRune()
@@ -344,7 +523,7 @@ func (t *Text) NextWord(offset int) (n int) {
 	return n
 }
 
-func (t *Text) PrevWord(offset int) (n int) {
+func (t *Buffer) PrevWord(offset int) (n int) {
 	offset, _ = t.Seek(offset, io.SeekStart)
 
 	r, size, _ := t.ReadRuneAt(offset)
@@ -361,7 +540,7 @@ func (t *Text) PrevWord(offset int) (n int) {
 }
 
 // NextDelim returns number of bytes from given offset up until next delimiter.
-func (t *Text) NextDelim(delim rune, offset int) (n int) {
+func (t *Buffer) NextDelim(delim rune, offset int) (n int) {
 	t.Seek(offset, io.SeekStart)
 
 	r, size, err := t.ReadRune()
@@ -384,7 +563,7 @@ func (t *Text) NextDelim(delim rune, offset int) (n int) {
 }
 
 // PrevDelim returns number of bytes from given offset up until next delimiter.
-func (t *Text) PrevDelim(delim rune, offset int) (n int) {
+func (t *Buffer) PrevDelim(delim rune, offset int) (n int) {
 	t.Seek(offset, io.SeekStart)
 	r, size, err := t.UnreadRune()
 	if err != nil {
@@ -406,7 +585,7 @@ func (t *Text) PrevDelim(delim rune, offset int) (n int) {
 	return n
 }
 
-func (t *Text) Undo() error {
+func (t *Buffer) Undo() error {
 	c, err := t.history.Undo()
 	if err != nil {
 		return errors.Wrap(err, "undo")
@@ -419,7 +598,7 @@ func (t *Text) Undo() error {
 	return nil
 }
 
-func (t *Text) Redo() error {
+func (t *Buffer) Redo() error {
 	c, err := t.history.Redo()
 	if err != nil {
 		return errors.Wrap(err, "redo")
@@ -434,7 +613,9 @@ func (t *Text) Redo() error {
 	return nil
 }
 
-func (t *Text) commit(c Change) (int, error) {
+func (t *Buffer) commit(c Change) (int, error) {
+	t.initBuffer()
+
 	switch c.action {
 	case HInsert:
 		t.buf.Seek(c.offset) // sync gap buffer

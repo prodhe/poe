@@ -26,7 +26,7 @@ func sliceEqual(a []byte, b []byte) bool {
 }
 
 func TestReadAt(t *testing.T) {
-	gb := gapbuffer.New()
+	gb := gapbuffer.Buffer{}
 	gb.Write([]byte(lipsum))
 
 	var tt = []struct {
@@ -55,7 +55,7 @@ func TestReadAt(t *testing.T) {
 }
 
 func TestSeekAndPos(t *testing.T) {
-	gb := gapbuffer.New()
+	gb := gapbuffer.Buffer{}
 	gb.Write([]byte(lipsum))
 
 	var tt = []struct {
@@ -92,7 +92,7 @@ func TestWriteSingle(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		b := gapbuffer.New()
+		b := gapbuffer.Buffer{}
 		n, err := b.Write(tc.input)
 		if n != tc.wantret {
 			t.Errorf("%s: expected %d bytes, got %d", tc.name, tc.wantret, n)
@@ -118,7 +118,7 @@ func TestWriteMulti(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		b := gapbuffer.New()
+		b := gapbuffer.Buffer{}
 		b.Write(tc.input1)
 		b.Seek(tc.offset)
 		b.Write(tc.input2)
@@ -146,7 +146,7 @@ func TestByteAt(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		b := gapbuffer.New()
+		b := gapbuffer.Buffer{}
 		b.Write(tc.input)
 		b.Seek(0)
 		c, err := b.ByteAt(tc.pos)
@@ -156,7 +156,7 @@ func TestByteAt(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		b := gapbuffer.New()
+		b := gapbuffer.Buffer{}
 		b.Write(tc.input)
 		b.Seek(2)
 		c, err := b.ByteAt(tc.pos)
@@ -166,7 +166,7 @@ func TestByteAt(t *testing.T) {
 	}
 
 	for _, tc := range tt {
-		b := gapbuffer.New()
+		b := gapbuffer.Buffer{}
 		b.Write(tc.input)
 		b.Seek(b.Len())
 		c, err := b.ByteAt(tc.pos)

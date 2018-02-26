@@ -1,4 +1,4 @@
-package main
+package uitcell
 
 type Workspace struct {
 	x, y, w, h int
@@ -10,7 +10,7 @@ type Column struct {
 	windows    []*Window
 }
 
-// Add adds a new column and resizes. It returns the index of the newly created column.
+// Add adds a new column and resizes.
 func (wrk *Workspace) AddCol() {
 	nx, ny := wrk.x, wrk.y
 	nw, nh := wrk.w, wrk.h
@@ -120,13 +120,13 @@ func (c *Column) CloseWindow(w *Window) {
 				CurWin = AllWindows()[0]
 
 			} else {
-				RunCommand("Exit")
+				ed.Run("Exit")
 			}
 		}
 
 		// if the only win left is the message win, close all
 		if len(all) == 1 && CurWin.Name() == FnMessageWin {
-			RunCommand("Exit")
+			ed.Run("Exit")
 		}
 	}
 

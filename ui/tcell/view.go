@@ -1,4 +1,4 @@
-package main
+package uitcell
 
 import (
 	"io"
@@ -10,6 +10,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/gdamore/tcell"
 	runewidth "github.com/mattn/go-runewidth"
+	"github.com/prodhe/poe/editor"
 )
 
 const (
@@ -26,7 +27,7 @@ type View struct {
 	style        tcell.Style
 	cursorStyle  tcell.Style
 	hilightStyle tcell.Style
-	text         *Text
+	text         *editor.Buffer
 	scrollpos    int // bytes to skip when drawing content
 	opos         int // overflow offset
 	tabstop      int
@@ -53,7 +54,8 @@ func (v *View) Write(p []byte) (int, error) {
 func (v *View) Delete() (int, error) {
 	// Do not allow deletion beyond what we can see.
 	// This forces the user to scroll to visible content.
-	if v.text.q0 == v.scrollpos && len(v.text.ReadDot()) == 0 {
+	q0, _ := v.text.Dot()
+	if q0 == v.scrollpos && len(v.text.ReadDot()) == 0 {
 		return 0, nil //silent return
 	}
 	n, err := v.text.Delete()
@@ -254,12 +256,13 @@ func (b *View) Draw() {
 			style := b.style
 
 			// highlight cursor
-			if (b.text.q0 == b.text.q1 && i == b.text.q0) && b.focused {
+			q0, q1 := b.text.Dot()
+			if (q0 == q1 && i == q0) && b.focused {
 				style = b.cursorStyle
 			}
 
 			// highlight selection
-			if (i >= b.text.q0 && i < b.text.q1) && b.focused {
+			if (i >= q0 && i < q1) && b.focused {
 				style = b.hilightStyle
 			}
 
@@ -323,7 +326,8 @@ func (b *View) Draw() {
 	}
 
 	// show cursor on EOF
-	if b.text.q0 == b.text.Len() && b.focused {
+	q0, _ := b.text.Dot()
+	if q0 == b.text.Len() && b.focused {
 		if x > b.x+b.w {
 			x = b.x
 			y++
@@ -381,7 +385,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				// if we clicked inside a current selection, run that one
 				q0, q1 := v.text.Dot()
 				if pos >= q0 && pos <= q1 && q0 != q1 {
-					RunCommand(v.text.ReadDot())
+					ed.Run(v.text.ReadDot())
 					return
 				}
 
@@ -391,7 +395,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				v.text.SetDot(p, n)
 				fn := strings.Trim(v.text.ReadDot(), "\n\t ")
 				v.text.SetDot(q0, q1)
-				RunCommand(fn)
+				ed.Run(fn)
 				return
 			}
 
@@ -441,7 +445,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			// if we clicked inside a current selection, run that one
 			q0, q1 := v.text.Dot()
 			if pos >= q0 && pos <= q1 && q0 != q1 {
-				RunCommand(v.text.ReadDot())
+				ed.Run(v.text.ReadDot())
 				return
 			}
 
@@ -451,7 +455,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.text.SetDot(p, n)
 			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
 			v.text.SetDot(q0, q1)
-			RunCommand(fn)
+			ed.Run(fn)
 			return
 		case tcell.Button3: // right click
 			pos := v.XYToOffset(mx, my)
@@ -558,10 +562,10 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Delete()
 			return
 		case tcell.KeyCtrlG: // file info/statistics
-			printMsg("0x%.4x %q %d,%d/%d\nbasedir: %s\nwindir: %s\n\nname: %s\nnameabs: %s\ntagname: %s\n",
+			printMsg("0x%.4x %q len %d\nbasedir: %s\nwindir: %s\nname: %s\n",
 				v.Rune(), v.Rune(),
-				v.text.q0, v.text.q1, v.text.Len(),
-				baseDir, CurWin.Dir(), CurWin.Name(), CurWin.NameAbs(), CurWin.NameTag())
+				v.text.Len(),
+				ed.WorkDir(), CurWin.Dir(), CurWin.Name())
 			return
 		case tcell.KeyCtrlO: // open file/dir
 			fn := v.text.ReadDot()
@@ -595,7 +599,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 					return
 				}
 			}
-			RunCommand(cmd)
+			ed.Run(cmd)
 			return
 		case tcell.KeyCtrlC: // copy to clipboard
 			str := v.text.ReadDot()
@@ -617,11 +621,11 @@ func (v *View) HandleEvent(ev tcell.Event) {
 		case tcell.KeyCtrlQ:
 			// close entire application if we are in the top menu
 			if v.what == ViewMenu {
-				RunCommand("Exit")
+				CmdExit()
 				return
 			}
 			// otherwise, just close this window (CurWin)
-			RunCommand("Del")
+			CmdDel()
 			return
 		default:
 			// insert

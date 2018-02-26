@@ -1,4 +1,4 @@
-package main
+package uitcell
 
 import "github.com/gdamore/tcell"
 
@@ -22,8 +22,8 @@ var (
 	unprintableStyle tcell.Style
 )
 
-// InitStyles initializes the different styles (colors for background/foreground).
-func InitStyles() {
+// initStyles initializes the different styles (colors for background/foreground).
+func initStyles() error {
 	bodyStyle = tcell.StyleDefault.
 		Background(tcell.NewHexColor(0xffffea)).
 		Foreground(tcell.ColorBlack)
@@ -48,4 +48,6 @@ func InitStyles() {
 		Background(tcell.NewHexColor(0x2222cc))
 
 	vertlineStyle = bodyStyle
+
+	return nil
 }
