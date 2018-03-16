@@ -9,14 +9,7 @@ const (
 	SignalQuit int = iota
 )
 
-type Messager interface {
-	// Message prints output from the editor, using the Printf signature.
-	Message(format string, a ...interface{})
-}
-
 type Interface interface {
-	//Messager
-
 	// Init initializes the user interface.
 	Init(ed editor.Editor) error
 

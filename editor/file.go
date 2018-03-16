@@ -4,8 +4,8 @@ import (
 	"time"
 )
 
-// File holds information about a file on disk.
-type File struct {
+// file holds information about a file on disk.
+type file struct {
 	name   string
 	read   bool      // true if file has been read
 	mtime  time.Time // of file when last read/written

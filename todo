@@ -24,7 +24,32 @@ visual
 	file stats with ^G
 	keep tagline updated with flags
 	show running processes in menu
-	another style for top menu
 	do not change CurWin on mousepressed
 	scroll on mpressed at bottom line
 	unprintableChar styling
+
+
+
+---
+
+
+slice insertion
+
+func insert(original []int, position int, value int) []int {
+  l := len(original)
+  target := original
+  if cap(original) == l {
+    target = make([]int, l+1, l+10)
+    copy(target, original[:position])
+  } else {
+    target = append(target, -1)
+  }
+  copy(target[position+1:], original[position:])
+  target[position] = value
+  return target
+}
+
+
+s = append(s, 0)
+copy(s[i+1:], s[i:])
+s[i] = x

@@ -80,7 +80,8 @@ func (wrk *Workspace) Draw() {
 
 		// draw vertical lines between cols
 		for x, y := col.x+col.w+1, wrk.y; y < wrk.y+wrk.h; y++ {
-			screen.SetContent(x, y, '|', nil, vertlineStyle)
+			// 2502
+			screen.SetContent(x, y, '\u007c', nil, vertlineStyle)
 		}
 	}
 }
@@ -101,11 +102,8 @@ func (c *Column) CloseWindow(w *Window) {
 	}
 	c.windows = c.windows[:j]
 
-	// If we deleted the current window (probably), select another
 	if CurWin == w {
-		all := AllWindows()
-
-		// If we are out of windows in our own column, pick another or exit
+		// If we are not out of windows in our own column, pick another or exit
 		if len(c.windows) > 0 {
 			CurWin = c.windows[j-1]
 		} else {
@@ -115,18 +113,7 @@ func (c *Column) CloseWindow(w *Window) {
 			// clear clutter
 			screen.Clear()
 
-			// find another window to focus or exit
-			if len(all) > 0 {
-				CurWin = AllWindows()[0]
-
-			} else {
-				ed.Run("Exit")
-			}
-		}
-
-		// if the only win left is the message win, close all
-		if len(all) == 1 && CurWin.Name() == FnMessageWin {
-			ed.Run("Exit")
+			return
 		}
 	}
 
@@ -141,12 +128,7 @@ func (c *Column) Resize(x, y, w, h int) {
 }
 
 func (c *Column) ResizeWindows() {
-	var n int
-	for _, win := range c.windows {
-		if !win.hidden {
-			n++
-		}
-	}
+	n := len(c.windows)
 
 	var remainder int
 	if n > 0 {
@@ -163,8 +145,6 @@ func (c *Column) ResizeWindows() {
 
 func (c *Column) Draw() {
 	for _, win := range c.windows {
-		if !win.hidden {
-			win.Draw()
-		}
+		win.Draw()
 	}
 }

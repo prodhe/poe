@@ -47,7 +47,7 @@ outer:
 			if len(input) < 2 {
 				break
 			}
-			c.ed.Current().Write([]byte(strings.Join(input[1:], " ")))
+			//c.ed.Current().Write([]byte(strings.Join(input[1:], " ")))
 		default:
 			fmt.Println("?")
 		}

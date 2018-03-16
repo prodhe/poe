@@ -33,7 +33,6 @@ type View struct {
 	tabstop      int
 	focused      bool
 	what         int
-	dirty        bool      // modified since last read/write
 	mclicktime   time.Time // last mouse click in time
 	mclickpos    int       // byte offset accounting for runes
 	mpressed     bool
@@ -43,9 +42,6 @@ func (v *View) Write(p []byte) (int, error) {
 	n, err := v.text.Write(p)
 	if err != nil {
 		return 0, err
-	}
-	if v.what == ViewBody {
-		v.dirty = true
 	}
 	v.SetCursor(0, 1) // force scroll if needed
 	return n, err
@@ -62,9 +58,6 @@ func (v *View) Delete() (int, error) {
 	if err != nil {
 		return n, err
 	}
-	if v.what == ViewBody {
-		v.dirty = true
-	}
 	v.SetCursor(0, 1) // force scroll
 	return n, nil
 }
@@ -79,9 +72,15 @@ func (v *View) Rune() rune {
 	return r
 }
 
+// Cursor returns start of dot.
 func (v *View) Cursor() int {
 	q0, _ := v.text.Dot()
 	return q0
+}
+
+// Dirty returns true if the buffer has been written to.
+func (v *View) Dirty() bool {
+	return v.text.Dirty()
 }
 
 func (v *View) SetCursor(pos, whence int) {
@@ -235,11 +234,15 @@ func (v *View) ScrollTo(offset int) {
 }
 
 func (b *View) Draw() {
+	//screen.HideCursor()
+
 	x, y := b.x, b.y
 
 	if b.text.Len() > 0 {
 		b.opos = b.scrollpos // keep track of last visible char/overflow
 		b.text.Seek(b.scrollpos, io.SeekStart)
+		q0, q1 := b.text.Dot()
+
 		for i := b.scrollpos; i < b.text.Len(); { // i gets incremented after reading of the rune, to know how many bytes we need to skip
 			// line wrap
 			if x > b.x+b.w {
@@ -255,15 +258,18 @@ func (b *View) Draw() {
 			// default style
 			style := b.style
 
-			// highlight cursor
-			q0, q1 := b.text.Dot()
+			// highlight cursor if on screen
 			if (q0 == q1 && i == q0) && b.focused {
-				style = b.cursorStyle
+				//style = b.cursorStyle
+				screen.ShowCursor(x, y)
 			}
 
-			// highlight selection
-			if (i >= q0 && i < q1) && b.focused {
+			// highlight selection, even if not focused
+			if i >= q0 && i < q1 {
 				style = b.hilightStyle
+				if b.focused {
+					screen.HideCursor()
+				}
 			}
 
 			// draw rune from buffer
@@ -334,8 +340,14 @@ func (b *View) Draw() {
 		}
 		if y < b.y+b.h {
 			screen.SetContent(x, y, ' ', nil, b.cursorStyle)
+			screen.ShowCursor(x, y)
 			x++
 		}
+	}
+
+	// if we are in focus, we are allowed to hide the central cursor if dot is currently off screen
+	if b.focused && (q0 < b.scrollpos || q0 > b.opos) {
+		screen.HideCursor()
 	}
 
 	// clear the rest and optionally show a special char as empty line
@@ -385,7 +397,10 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				// if we clicked inside a current selection, run that one
 				q0, q1 := v.text.Dot()
 				if pos >= q0 && pos <= q1 && q0 != q1 {
-					ed.Run(v.text.ReadDot())
+					output := Cmd(v.text.ReadDot())
+					if output != "" {
+						printMsg(output)
+					}
 					return
 				}
 
@@ -393,9 +408,12 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				p := pos - v.text.PrevSpace(pos)
 				n := pos + v.text.NextSpace(pos)
 				v.text.SetDot(p, n)
-				fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+				str := strings.Trim(v.text.ReadDot(), "\n\t ")
 				v.text.SetDot(q0, q1)
-				ed.Run(fn)
+				output := Cmd(str)
+				if output != "" {
+					printMsg(output)
+				}
 				return
 			}
 
@@ -445,7 +463,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			// if we clicked inside a current selection, run that one
 			q0, q1 := v.text.Dot()
 			if pos >= q0 && pos <= q1 && q0 != q1 {
-				ed.Run(v.text.ReadDot())
+				Cmd(v.text.ReadDot())
 				return
 			}
 
@@ -455,7 +473,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.text.SetDot(p, n)
 			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
 			v.text.SetDot(q0, q1)
-			ed.Run(fn)
+			Cmd(fn)
 			return
 		case tcell.Button3: // right click
 			pos := v.XYToOffset(mx, my)
@@ -562,10 +580,12 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Delete()
 			return
 		case tcell.KeyCtrlG: // file info/statistics
-			printMsg("0x%.4x %q len %d\nbasedir: %s\nwindir: %s\nname: %s\n",
+			sw, sh := screen.Size()
+			printMsg("0x%.4x %q len %d\nbasedir: %s\nwindir: %s\nname: %s\nw: %d h: %d sw: %d sh: %d\n",
 				v.Rune(), v.Rune(),
 				v.text.Len(),
-				ed.WorkDir(), CurWin.Dir(), CurWin.Name())
+				ed.WorkDir(), CurWin.Dir(), CurWin.Name(),
+				CurWin.w, CurWin.h, sh, sw)
 			return
 		case tcell.KeyCtrlO: // open file/dir
 			fn := v.text.ReadDot()
@@ -586,6 +606,9 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			}
 			CmdOpen(fn)
 			return
+		case tcell.KeyCtrlN: // new column
+			CmdNewcol()
+			return
 		case tcell.KeyCtrlR: // run command in dot
 			cmd := v.text.ReadDot()
 			if cmd == "" { // select all non-space characters
@@ -599,7 +622,8 @@ func (v *View) HandleEvent(ev tcell.Event) {
 					return
 				}
 			}
-			ed.Run(cmd)
+			res := Cmd(cmd)
+			printMsg("%s\n", res)
 			return
 		case tcell.KeyCtrlC: // copy to clipboard
 			str := v.text.ReadDot()
@@ -618,13 +642,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			}
 			v.text.Write([]byte(s))
 			return
-		case tcell.KeyCtrlQ:
-			// close entire application if we are in the top menu
-			if v.what == ViewMenu {
-				CmdExit()
-				return
-			}
-			// otherwise, just close this window (CurWin)
+		case tcell.KeyCtrlQ: // close window
 			CmdDel()
 			return
 		default:

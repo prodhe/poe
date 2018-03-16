@@ -3,6 +3,7 @@ package uitcell
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/prodhe/poe/editor"
@@ -17,13 +18,16 @@ const (
 var (
 	screen    tcell.Screen
 	ed        editor.Editor
-	menu      *View
 	workspace *Workspace
 	CurWin    *Window
+
+	poecmds map[string]commandFunc
 
 	quit   chan bool
 	events chan tcell.Event
 )
+
+type commandFunc func()
 
 type Tcell struct{}
 
@@ -37,10 +41,6 @@ func (t *Tcell) Init(e editor.Editor) error {
 		return err
 	}
 
-	if err := initMenu(); err != nil {
-		return err
-	}
-
 	if err := initWorkspace(); err != nil {
 		return err
 	}
@@ -48,6 +48,8 @@ func (t *Tcell) Init(e editor.Editor) error {
 	if err := initWindows(); err != nil {
 		return err
 	}
+
+	initCommands()
 
 	quit = make(chan bool, 1)
 	events = make(chan tcell.Event, 100)
@@ -65,14 +67,10 @@ func (t *Tcell) Close() {
 
 func printMsg(format string, a ...interface{}) {
 	// get output window
-	var poewin *Window
-	for _, win := range AllWindows() {
-		poename := win.Dir() + string(filepath.Separator) + FnMessageWin
-		poename = filepath.Clean(poename)
-		if win.Name() == poename && CurWin.Dir() == win.Dir() {
-			poewin = win
-		}
-	}
+	poename := CurWin.Dir() + string(filepath.Separator) + FnMessageWin
+	poename = filepath.Clean(poename)
+
+	poewin := FindWindow(poename)
 
 	if poewin == nil {
 		id, buf := ed.NewBuffer()
@@ -110,19 +108,6 @@ func initScreen() error {
 	return nil
 }
 
-func initMenu() error {
-	menu = &View{
-		text:         &editor.Buffer{},
-		what:         ViewMenu,
-		style:        bodyStyle,
-		cursorStyle:  bodyCursorStyle,
-		hilightStyle: bodyHilightStyle,
-		tabstop:      4,
-	}
-	fmt.Fprintf(menu, "Exit New Newcol")
-	return nil
-}
-
 func initWorkspace() error {
 	workspace = &Workspace{} // first resize event will set proper dimensions
 	workspace.AddCol()
@@ -134,12 +119,21 @@ func initWindows() error {
 	for _, id := range ids {
 		win := NewWindow(id)
 		workspace.LastCol().AddWindow(win)
+		CurWin = win
 	}
 	return nil
 }
 
+func initCommands() {
+	poecmds = map[string]commandFunc{
+		"New":    CmdNew,
+		"Newcol": CmdNewcol,
+		"Del":    CmdDel,
+		"Exit":   CmdExit,
+	}
+}
+
 func (t *Tcell) redraw() {
-	menu.Draw()
 	workspace.Draw()
 	screen.Show()
 }
@@ -168,9 +162,7 @@ outer:
 			switch e := event.(type) {
 			case *tcell.EventResize:
 				w, h := screen.Size()
-				menu.Resize(0, 0, w, 1)
-				workspace.Resize(0, 1, w, h-1)
-				//screen.Clear()
+				workspace.Resize(0, 0, w, h)
 				screen.Sync()
 			case *tcell.EventKey: // system wide shortcuts
 				switch e.Key() {
@@ -178,10 +170,6 @@ outer:
 					screen.Clear()
 					screen.Sync()
 				default: // let the focused view handle event
-					if menu.focused {
-						menu.HandleEvent(e)
-						break
-					}
 					if CurWin != nil {
 						CurWin.HandleEvent(e)
 					}
@@ -198,15 +186,8 @@ outer:
 					}
 				}
 
-				// check if we are in the menu
-				menu.focused = false
-				if my < 1 {
-					menu.focused = true
-					menu.HandleEvent(e)
-					break
-				}
-
 				if CurWin != nil {
+					CurWin.Focus()
 					CurWin.HandleEvent(e)
 				}
 			}
@@ -218,6 +199,29 @@ outer:
 			}
 		}
 	}
+}
+
+func Cmd(input string) string {
+	if input == "" {
+		return ""
+	}
+
+	input = strings.Trim(input, "\t\n ")
+
+	// check poe default commands
+	cmd := strings.Split(string(input), " ")
+	if fn, ok := poecmds[cmd[0]]; ok {
+		fn()
+		return ""
+	}
+
+	// Edit shortcuts for external commands and piping
+	switch input[0] {
+	case '!', '<', '>', '|':
+		return ed.Edit(CurWin.bufid, input)
+	}
+
+	return ed.Edit(CurWin.bufid, "!"+input)
 }
 
 func CmdOpen(fn string) {
@@ -233,7 +237,7 @@ func CmdOpen(fn string) {
 	}
 }
 
-func CmdNew(args string) {
+func CmdNew() {
 	screen.Clear()
 	id, _ := ed.NewBuffer()
 	win := NewWindow(id)
@@ -241,7 +245,16 @@ func CmdNew(args string) {
 }
 
 func CmdDel() {
+	if len(AllWindows()) == 1 {
+		CmdExit()
+		return
+	}
 	CurWin.Close()
+}
+
+func CmdNewcol() {
+	workspace.AddCol()
+	CmdNew()
 }
 
 func CmdExit() {
@@ -252,7 +265,7 @@ func CmdExit() {
 			exit = false
 		}
 	}
-	if exit || len(wins) == 0 {
+	if exit {
 		quit <- true
 	}
 }

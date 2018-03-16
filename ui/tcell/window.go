@@ -14,9 +14,8 @@ type Window struct {
 	body       *View
 	tagline    *View
 	col        *Column // reference to the column where in
-	hidden     bool
-	collapsed  bool // not implemented
-	qcnt       int  // quit count
+	collapsed  bool    // not implemented
+	qcnt       int     // quit count
 }
 
 // NewWindow returns a fresh window associated with the given filename. For special case filenames, look at the package constants.
@@ -75,8 +74,13 @@ func (win *Window) Resize(x, y, w, h int) {
 	win.body.Resize(win.x, win.y+1, win.w, win.h-1)
 }
 
-func (win *Window) UnFocus() {
+func (win *Window) Focus() {
 	win.body.focused = true
+	//win.tagline.focused = true
+}
+
+func (win *Window) UnFocus() {
+	win.body.focused = false
 	win.tagline.focused = false
 }
 
@@ -85,7 +89,22 @@ func (win *Window) Name() string {
 }
 
 func (win *Window) Dir() string {
-	return win.body.text.WorkDir()
+	d := win.body.text.WorkDir()
+	if d == "." {
+		return ed.WorkDir() // base path for program
+	}
+	return d
+}
+
+func (win *Window) Flags() [2]rune {
+	flags := [2]rune{' ', '-'}
+	if win.body.Dirty() {
+		flags[0] = '\''
+	}
+	if win.collapsed {
+		flags[1] = '+'
+	}
+	return flags
 }
 
 func (win *Window) HandleEvent(ev tcell.Event) {
@@ -119,13 +138,9 @@ func (win *Window) HandleEvent(ev tcell.Event) {
 }
 
 func (win *Window) Draw() {
-	// Draw tag square
-	boxstyle := tagSquareStyle
-	if win.body.dirty {
-		boxstyle = tagSquareModifiedStyle
-	}
-	screen.SetContent(win.x, win.y, ' ', nil, boxstyle)
-	screen.SetContent(win.x+1, win.y, ' ', nil, boxstyle)
+	flags := win.Flags()
+	screen.SetContent(win.x, win.y, flags[0], nil, win.tagline.style)
+	screen.SetContent(win.x+1, win.y, flags[1], nil, win.tagline.style)
 	screen.SetContent(win.x+2, win.y, ' ', nil, win.tagline.style)
 
 	// Tagline
@@ -136,11 +151,14 @@ func (win *Window) Draw() {
 }
 
 func (win *Window) CanClose() bool {
-	ok := !win.body.dirty || win.qcnt > 0
+	if win.body.what == ViewScratch {
+		return true
+	}
+	ok := (!win.body.Dirty() || win.qcnt > 0)
 	if !ok {
 		name := win.Name()
 		if name == FnEmptyWin {
-			name = "unnamed file"
+			name = "unnamed buffer"
 		}
 		printMsg("%s modified\n", name)
 		win.qcnt++
