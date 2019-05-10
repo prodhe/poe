@@ -12,8 +12,6 @@ text
 	undvika in-ram buffer - swapfiles?
 	concurrent-safe gap buffer
 	auto increment new line
-	undo
-		unlimited for real (undo undo)
 	cache write Change{} until next action
 	refactor all Next/Prev-funcs
 ---
