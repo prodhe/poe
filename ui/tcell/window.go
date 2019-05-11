@@ -2,7 +2,6 @@ package uitcell
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/prodhe/poe/editor"
@@ -42,7 +41,7 @@ func NewWindow(id int64) *Window {
 		},
 	}
 
-	fmt.Fprintf(win.tagline, "%s ",
+	fmt.Fprintf(win.tagline, "%s Del ",
 		win.TagName(),
 	)
 
@@ -90,7 +89,7 @@ func (win *Window) Name() string {
 }
 
 func (win *Window) TagName() string {
-	return strings.TrimPrefix(win.body.text.Name(), ed.WorkDir())
+	return win.body.text.Name()
 }
 
 func (win *Window) Dir() string {

@@ -24,24 +24,25 @@ var (
 
 // initStyles initializes the different styles (colors for background/foreground).
 func initStyles() error {
-	bodyStyle = tcell.StyleDefault
+	//bodyStyle = tcell.StyleDefault
 
-	//	bodyStyle = tcell.StyleDefault.
-	//		Background(tcell.NewHexColor(0xffffea)).
-	//		Foreground(tcell.ColorBlack)
+	bodyStyle = tcell.StyleDefault.
+		Background(tcell.NewHexColor(0xffffea)).
+		Foreground(tcell.ColorBlack)
 
 	bodyCursorStyle = bodyStyle.
 		Background(tcell.NewHexColor(0xeaea9e))
 
-	bodyHilightStyle = bodyStyle.Reverse(true)
-	//	bodyHilightStyle = bodyStyle.
-	//		Background(tcell.NewHexColor(0xa6a65a))
+	//bodyHilightStyle = bodyStyle.Reverse(true)
+	bodyHilightStyle = bodyStyle.
+		Background(tcell.NewHexColor(0xa6a65a))
 	unprintableStyle = bodyStyle.
 		Foreground(tcell.ColorRed)
 
-	tagStyle = tcell.StyleDefault.Reverse(true)
-	//Background(tcell.NewHexColor(0xeaffff)).
-	//Foreground(tcell.ColorBlack)
+	//tagStyle = tcell.StyleDefault.Reverse(true)
+	tagStyle = tcell.StyleDefault.
+		Background(tcell.NewHexColor(0xeaffff)).
+		Foreground(tcell.ColorBlack)
 	tagCursorStyle = tagStyle.
 		Background(tcell.NewHexColor(0x8888cc)).
 		Foreground(tcell.ColorBlack)
