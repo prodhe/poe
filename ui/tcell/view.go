@@ -2,6 +2,7 @@ package uitcell
 
 import (
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -392,54 +393,13 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.mpressed = true
 			v.mclickpos = pos
 
-			if ev.Modifiers()&tcell.ModAlt != 0 { // identic code to Btn2
-				pos := v.XYToOffset(mx, my)
-				// if we clicked inside a current selection, run that one
-				q0, q1 := v.text.Dot()
-				if pos >= q0 && pos <= q1 && q0 != q1 {
-					output := Cmd(v.text.ReadDot())
-					if output != "" {
-						printMsg(output)
-					}
-					return
-				}
-
-				// otherwise, select non-space chars under mouse and run that
-				p := pos - v.text.PrevSpace(pos)
-				n := pos + v.text.NextSpace(pos)
-				v.text.SetDot(p, n)
-				str := strings.Trim(v.text.ReadDot(), "\n\t ")
-				v.text.SetDot(q0, q1)
-				output := Cmd(str)
-				if output != "" {
-					printMsg(output)
-				}
+			if ev.Modifiers()&tcell.ModAlt != 0 { // identic to ButtonMiddle
+				ButtonMiddle(v, mx, my)
 				return
 			}
 
-			if ev.Modifiers()&tcell.ModShift != 0 { // identic code to Btn3
-				pos := v.XYToOffset(mx, my)
-				// if we clicked inside a current selection, open that one
-				q0, q1 := v.text.Dot()
-				if pos >= q0 && pos <= q1 && q0 != q1 {
-					CmdOpen(v.text.ReadDot())
-					return
-				}
-
-				// otherwise, select everything inside surround spaces and open that
-				p := pos - v.text.PrevSpace(pos)
-				n := pos + v.text.NextSpace(pos)
-				v.text.SetDot(p, n)
-				fn := strings.Trim(v.text.ReadDot(), "\n\t ")
-				v.text.SetDot(q0, q1)
-				if fn == "" { // if it is still blank, abort
-					return
-				}
-				if fn != "" && fn[0] != filepath.Separator {
-					fn = CurWin.Dir() + string(filepath.Separator) + fn
-					fn = filepath.Clean(fn)
-				}
-				CmdOpen(fn)
+			if ev.Modifiers()&tcell.ModShift != 0 { // identic to ButtonSecondary
+				ButtonSecondary(v, mx, my)
 				return
 			}
 
@@ -459,45 +419,10 @@ func (v *View) HandleEvent(ev tcell.Event) {
 		case tcell.WheelDown: // scrolldown
 			v.Scroll(1)
 		case tcell.ButtonMiddle: // middle click
-			pos := v.XYToOffset(mx, my)
-			// if we clicked inside a current selection, run that one
-			q0, q1 := v.text.Dot()
-			if pos >= q0 && pos <= q1 && q0 != q1 {
-				Cmd(v.text.ReadDot())
-				return
-			}
-
-			// otherwise, select non-space chars under mouse and run that
-			p := pos - v.text.PrevSpace(pos)
-			n := pos + v.text.NextSpace(pos)
-			v.text.SetDot(p, n)
-			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
-			v.text.SetDot(q0, q1)
-			Cmd(fn)
+			ButtonMiddle(v, mx, my)
 			return
 		case tcell.ButtonSecondary: // right click
-			pos := v.XYToOffset(mx, my)
-			// if we clicked inside a current selection, open that one
-			q0, q1 := v.text.Dot()
-			if pos >= q0 && pos <= q1 && q0 != q1 {
-				CmdOpen(v.text.ReadDot())
-				return
-			}
-
-			// otherwise, select everything inside surround spaces and open that
-			p := pos - v.text.PrevSpace(pos)
-			n := pos + v.text.NextSpace(pos)
-			v.text.SetDot(p, n)
-			fn := strings.Trim(v.text.ReadDot(), "\n\t ")
-			v.text.SetDot(q0, q1)
-			if fn == "" { // if it is still blank, abort
-				return
-			}
-			if fn != "" && fn[0] != filepath.Separator {
-				fn = CurWin.Dir() + string(filepath.Separator) + fn
-				fn = filepath.Clean(fn)
-			}
-			CmdOpen(fn)
+			ButtonSecondary(v, mx, my)
 			return
 		default:
 			printMsg("%#v", btn)
@@ -587,43 +512,8 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				ed.WorkDir(), CurWin.Dir(), CurWin.Name(),
 				CurWin.w, CurWin.h, sh, sw)
 			return
-		case tcell.KeyCtrlO: // open file/dir
-			fn := v.text.ReadDot()
-			if fn == "" { // select all non-space characters
-				curpos := v.Cursor()
-				p := curpos - v.text.PrevSpace(curpos)
-				n := curpos + v.text.NextSpace(curpos)
-				v.text.SetDot(p, n)
-				fn = strings.Trim(v.text.ReadDot(), "\n\t ")
-				v.SetCursor(curpos, io.SeekStart)
-				if fn == "" { // if it is still blank, abort
-					return
-				}
-			}
-			if fn != "" && fn[0] != filepath.Separator {
-				fn = CurWin.Dir() + string(filepath.Separator) + fn
-				fn = filepath.Clean(fn)
-			}
-			CmdOpen(fn)
-			return
 		case tcell.KeyCtrlN: // new column
 			CmdNewcol()
-			return
-		case tcell.KeyCtrlR: // run command in dot
-			cmd := v.text.ReadDot()
-			if cmd == "" { // select all non-space characters
-				curpos := v.Cursor()
-				p := curpos - v.text.PrevSpace(curpos)
-				n := curpos + v.text.NextSpace(curpos)
-				v.text.SetDot(p, n)
-				cmd = strings.Trim(v.text.ReadDot(), "\n\t ")
-				v.SetCursor(curpos, io.SeekStart)
-				if cmd == "" { // if it is still blank, abort
-					return
-				}
-			}
-			res := Cmd(cmd)
-			printMsg("%s\n", res)
 			return
 		case tcell.KeyCtrlC: // copy to clipboard
 			str := v.text.ReadDot()
@@ -664,4 +554,61 @@ func RuneWidth(r rune) int {
 		rw = 2
 	}
 	return rw
+}
+
+func ButtonSecondary(v *View, mx, my int) {
+	pos := v.XYToOffset(mx, my)
+	// if we clicked inside a current selection, open that one
+	q0, q1 := v.text.Dot()
+	if pos < q0 || pos > q1 || q0 == q1 {
+		// otherwise, select everything inside surround spaces and open that
+		p := pos - v.text.PrevSpace(pos)
+		n := pos + v.text.NextSpace(pos)
+		v.text.SetDot(p, n)
+	}
+
+	// read our (changed) dot and then reset it to whatever the user had (or had not) selected
+	fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+	v.text.SetDot(q0, q1)
+
+	if fn == "" { // if it is still blank, abort
+		return
+	}
+	if fn != "" && fn[0] != filepath.Separator {
+		fn = CurWin.Dir() + string(filepath.Separator) + fn
+		fn = filepath.Clean(fn)
+	}
+
+	_, err := os.Stat(fn)
+	if err != nil {
+		// if the file exists, print why we could not open it
+		// otherwise just close silently
+		if os.IsExist(err) {
+			printMsg("%s\n", err)
+			return
+		}
+		return
+	}
+
+	CmdOpen(fn)
+	return
+}
+
+func ButtonMiddle(v *View, mx, my int) {
+	pos := v.XYToOffset(mx, my)
+	// if we clicked inside a current selection, run that one
+	q0, q1 := v.text.Dot()
+	if pos >= q0 && pos <= q1 && q0 != q1 {
+		Cmd(v.text.ReadDot())
+		return
+	}
+
+	// otherwise, select non-space chars under mouse and run that
+	p := pos - v.text.PrevSpace(pos)
+	n := pos + v.text.NextSpace(pos)
+	v.text.SetDot(p, n)
+	fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+	v.text.SetDot(q0, q1)
+	Cmd(fn)
+	return
 }
