@@ -558,10 +558,10 @@ func RuneWidth(r rune) int {
 
 func ButtonSecondary(v *View, mx, my int) {
 	pos := v.XYToOffset(mx, my)
-	// if we clicked inside a current selection, open that one
+	// if we clicked outside a current selection, open that one
 	q0, q1 := v.text.Dot()
 	if pos < q0 || pos > q1 || q0 == q1 {
-		// otherwise, select everything inside surround spaces and open that
+		// select everything inside surround spaces and open that
 		p := pos - v.text.PrevSpace(pos)
 		n := pos + v.text.NextSpace(pos)
 		v.text.SetDot(p, n)
@@ -596,19 +596,21 @@ func ButtonSecondary(v *View, mx, my int) {
 
 func ButtonMiddle(v *View, mx, my int) {
 	pos := v.XYToOffset(mx, my)
-	// if we clicked inside a current selection, run that one
+	// if we clicked outside a current selection, run that one
 	q0, q1 := v.text.Dot()
-	if pos >= q0 && pos <= q1 && q0 != q1 {
-		Cmd(v.text.ReadDot())
-		return
+	if pos < q0 || pos > q1 || q0 == q1 {
+		// select everything inside surround spaces and run that
+		p := pos - v.text.PrevSpace(pos)
+		n := pos + v.text.NextSpace(pos)
+		v.text.SetDot(p, n)
 	}
 
-	// otherwise, select non-space chars under mouse and run that
-	p := pos - v.text.PrevSpace(pos)
-	n := pos + v.text.NextSpace(pos)
-	v.text.SetDot(p, n)
-	fn := strings.Trim(v.text.ReadDot(), "\n\t ")
+	str := strings.Trim(v.text.ReadDot(), "\n\t ")
 	v.text.SetDot(q0, q1)
-	Cmd(fn)
+
+	output := Cmd(str)
+	if output != "" {
+		printMsg(output)
+	}
 	return
 }
