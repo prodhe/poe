@@ -176,6 +176,9 @@ func (b *Buffer) Name() string {
 		return ""
 	}
 	s, _ := filepath.Abs(b.file.name)
+	if b.what == BufferDir {
+		s += string(filepath.Separator)
+	}
 	return s
 }
 
