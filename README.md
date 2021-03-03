@@ -20,17 +20,21 @@ Use the mouse. `^Q` exits.
 
 Everything is text and everything is editable. There are two ways to interact with text, `Run` or `Open`.
 
-`Open` (`^O`, right-click or Shift+Click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
+`Open` (Right-click or Shift+Click) will assume the selected text is a file or a directory and will open a new window listing its content. If none is found, it does nothing.
 
-`Run` (`^R`, middle-click or Alt+Click) interprets the text as a command, which can be an internal poe command like `New` or `Del`. If none is found, it does nothing.
+`Run` (Middle-click or Alt+Click) interprets the text as a command, which can be an internal *poe* command like `New` or `Del`. If none is found, it does nothing.
 
-`^S` saves current buffer to disk. You can change the name by edit the tagline.
+`^S` saves current buffer to disk.
 
-`^Z` undo, `^Y` redo.
+`^Z` undo, `^Y` redo. If you go back and change something, the future is lost. Like proper time travel.
 
 `^W` deletes word backwards.
 
 `^U` deletes to beginning of line.
+
+`^C` copies selection.
+
+`^V` pastes into selection or place of cursor.
 
 ### Commands
 
