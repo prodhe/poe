@@ -46,6 +46,10 @@ func (t *Tcell) Init(e editor.Editor) error {
 		return err
 	}
 
+	if err := setStyleAcme(); err != nil {
+		return err
+	}
+
 	if err := initWorkspace(); err != nil {
 		return err
 	}
