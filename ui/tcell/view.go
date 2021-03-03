@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
-	"github.com/gdamore/tcell"
+	tcell "github.com/gdamore/tcell/v2"
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/prodhe/poe/editor"
 )
@@ -377,7 +377,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			if v.mpressed {
 				v.mpressed = false
 			}
-		case tcell.Button1:
+		case tcell.ButtonPrimary:
 			pos := v.XYToOffset(mx, my)
 			if v.mpressed { // select text via click-n-drag
 				if pos > v.mclickpos {
@@ -458,7 +458,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.Scroll(-1)
 		case tcell.WheelDown: // scrolldown
 			v.Scroll(1)
-		case tcell.Button2: // middle click
+		case tcell.ButtonMiddle: // middle click
 			pos := v.XYToOffset(mx, my)
 			// if we clicked inside a current selection, run that one
 			q0, q1 := v.text.Dot()
@@ -475,7 +475,7 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.text.SetDot(q0, q1)
 			Cmd(fn)
 			return
-		case tcell.Button3: // right click
+		case tcell.ButtonSecondary: // right click
 			pos := v.XYToOffset(mx, my)
 			// if we clicked inside a current selection, open that one
 			q0, q1 := v.text.Dot()
