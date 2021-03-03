@@ -17,6 +17,11 @@ type Cli struct {
 
 func (c *Cli) Init(e editor.Editor) error {
 	c.ed = e
+
+	if c.ed.Len() == 0 {
+		c.ed.NewBuffer()
+	}
+
 	return nil
 }
 
@@ -33,17 +38,22 @@ outer:
 		switch input[0][0] { // first rune in input
 		case 'q': // quit
 			break outer
-		case 'f':
+		case 'f': // list files
 			ids, bs := c.ed.Buffers()
 			fmt.Printf("%v\n%v\n", ids, bs)
-		case 'b':
+		case 'e': // edit/load file name
+			if len(input) <= 1 {
+				c.ed.NewBuffer()
+			}
+			c.ed.LoadBuffers(input[1:])
+		case 'b': // select active buffer
 			if len(input) > 1 {
 				id, _ := strconv.ParseInt(input[1], 10, 64)
 				c.ed.Buffer(id)
 				break
 			}
 			c.ed.NewBuffer()
-		case 'a':
+		case 'a': // append
 			if len(input) < 2 {
 				break
 			}

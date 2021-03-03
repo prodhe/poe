@@ -33,6 +33,11 @@ type Tcell struct{}
 
 func (t *Tcell) Init(e editor.Editor) error {
 	ed = e
+
+	if ed.Len() == 0 {
+		ed.LoadBuffers([]string{"."})
+	}
+
 	if err := initScreen(); err != nil {
 		return err
 	}

@@ -91,10 +91,6 @@ func (e *ed) LoadBuffers(fns []string) {
 		buf.NewFile(fn)
 		buf.ReadFile()
 	}
-
-	if len(fns) == 0 {
-		e.NewBuffer()
-	}
 }
 
 func (e *ed) genBufferID() int64 {
