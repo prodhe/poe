@@ -14,7 +14,7 @@ const poeVersion = "0.0.0"
 
 func main() {
 	version := flag.Bool("v", false, "prints current version of poe")
-	cli := flag.Bool("c", false, "prints current version of poe")
+	// cli := flag.Bool("c", false, "run in command line")
 
 	flag.Parse()
 
@@ -29,9 +29,9 @@ func main() {
 
 	// load client user interface
 	cui := ui.NewTcell()
-	if *cli {
-		cui = ui.NewCli()
-	}
+	// if *cli {
+	// 	cui = ui.NewCli()
+	// }
 
 	cui.Init(e)
 
