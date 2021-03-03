@@ -1,6 +1,6 @@
 package uitcell
 
-import "github.com/gdamore/tcell"
+import tcell "github.com/gdamore/tcell/v2"
 
 var (
 	// body is the main editing buffer
@@ -24,22 +24,27 @@ var (
 
 // initStyles initializes the different styles (colors for background/foreground).
 func initStyles() error {
-	//bodyStyle = tcell.StyleDefault
+	bodyStyle = tcell.StyleDefault
+	bodyHilightStyle = bodyStyle.Reverse(true)
+	unprintableStyle = bodyStyle.
+		Foreground(tcell.ColorRed)
+	tagStyle = tcell.StyleDefault.Reverse(true)
+	vertlineStyle = bodyStyle.Reverse(false)
 
+	return nil
+}
+
+// acmeStyles sets the color scheme to acme.
+func setStyleAcme() error {
 	bodyStyle = tcell.StyleDefault.
 		Background(tcell.NewHexColor(0xffffea)).
 		Foreground(tcell.ColorBlack)
-
 	bodyCursorStyle = bodyStyle.
 		Background(tcell.NewHexColor(0xeaea9e))
-
-	//bodyHilightStyle = bodyStyle.Reverse(true)
 	bodyHilightStyle = bodyStyle.
 		Background(tcell.NewHexColor(0xa6a65a))
 	unprintableStyle = bodyStyle.
 		Foreground(tcell.ColorRed)
-
-	//tagStyle = tcell.StyleDefault.Reverse(true)
 	tagStyle = tcell.StyleDefault.
 		Background(tcell.NewHexColor(0xeaffff)).
 		Foreground(tcell.ColorBlack)
@@ -52,7 +57,6 @@ func initStyles() error {
 		Background(tcell.NewHexColor(0x8888cc))
 	tagSquareModifiedStyle = tagStyle.
 		Background(tcell.NewHexColor(0x2222cc))
-
 	vertlineStyle = bodyStyle.Reverse(false)
 
 	return nil
