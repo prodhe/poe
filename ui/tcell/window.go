@@ -43,8 +43,9 @@ func NewWindow(id int64) *Window {
 	}
 
 	tagname := win.TagName()
-	if win.body.text.IsDir() {
-		tagname += string(filepath.Separator)
+	sep := string(filepath.Separator)
+	if win.body.text.IsDir() && tagname != sep {
+		tagname += sep
 	}
 	fmt.Fprintf(win.tagline, "%s Del Get ",
 		tagname,
