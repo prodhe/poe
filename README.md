@@ -44,6 +44,8 @@ Everything is text and everything is editable. There are two ways to interact wi
 
 `Del` closes current window. If it is the last window, the program will exit.
 
+`Get` reloads the buffer from disk, wiping any changes you have made since the file was last read.
+
 `Exit` closes all windows and exits the program.
 
 Run command on `date` executes `date` as a shell command and presents its output in the message window named `+poe`. Or `pwd`, or `ls -l`, or `curl google.se`, or... you get the idea.

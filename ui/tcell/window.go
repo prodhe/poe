@@ -41,7 +41,7 @@ func NewWindow(id int64) *Window {
 		},
 	}
 
-	fmt.Fprintf(win.tagline, "%s Del ",
+	fmt.Fprintf(win.tagline, "%s Del Get ",
 		win.TagName(),
 	)
 

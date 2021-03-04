@@ -138,6 +138,7 @@ func initCommands() {
 		"New":    CmdNew,
 		"Newcol": CmdNewcol,
 		"Del":    CmdDel,
+		"Get":    CmdGet,
 		"Exit":   CmdExit,
 	}
 }
@@ -264,6 +265,19 @@ func CmdDel() {
 func CmdNewcol() {
 	workspace.AddCol()
 	CmdNew()
+}
+
+func CmdGet() {
+	screen.Clear()
+	wins := AllWindows()
+	for _, win := range wins {
+		if win.tagline.focused {
+			q0, q1 := win.body.text.Dot()
+			win.body.text.Destroy()
+			win.body.text.ReadFile()
+			win.body.text.SetDot(q0, q1)
+		}
+	}
 }
 
 func CmdExit() {

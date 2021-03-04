@@ -246,6 +246,14 @@ func (b *Buffer) Delete() (int, error) {
 	return n, nil
 }
 
+// Destroy will mark the buffer as completely empty and reset to 0.
+func (b *Buffer) Destroy() {
+	b.buf.Destroy()
+	b.SetDot(0, 0)
+	b.dirty = false
+	b.file.read = false
+}
+
 // Len returns the number of bytes in buffer.
 func (b *Buffer) Len() int {
 	b.initBuffer()

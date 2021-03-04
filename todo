@@ -5,7 +5,6 @@ file
 	backup files on disk
 window
 	hide / collapse
-	command Get (update buffer content)
 	open files with line number, eg poe.go:25
 text
 	int64 as default in case of large files
