@@ -110,6 +110,11 @@ func (b *Buffer) ReadFile() error {
 	return nil
 }
 
+// IsDir returns true if the type of the this buffer is a directory listing.
+func (b *Buffer) IsDir() bool {
+	return b.what == BufferDir
+}
+
 // SaveFile writes content of buffer to its filename.
 func (b *Buffer) SaveFile() (int, error) {
 	b.initBuffer()
@@ -176,9 +181,6 @@ func (b *Buffer) Name() string {
 		return ""
 	}
 	s, _ := filepath.Abs(b.file.name)
-	if b.what == BufferDir {
-		s += string(filepath.Separator)
-	}
 	return s
 }
 

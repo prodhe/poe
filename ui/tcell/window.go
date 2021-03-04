@@ -2,6 +2,7 @@ package uitcell
 
 import (
 	"fmt"
+	"path/filepath"
 
 	tcell "github.com/gdamore/tcell/v2"
 	"github.com/prodhe/poe/editor"
@@ -41,8 +42,12 @@ func NewWindow(id int64) *Window {
 		},
 	}
 
+	tagname := win.TagName()
+	if win.body.text.IsDir() {
+		tagname += string(filepath.Separator)
+	}
 	fmt.Fprintf(win.tagline, "%s Del Get ",
-		win.TagName(),
+		tagname,
 	)
 
 	return win
