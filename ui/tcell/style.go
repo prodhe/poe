@@ -38,25 +38,25 @@ func initStyles() error {
 func setStyleAcme() error {
 	bodyStyle = tcell.StyleDefault.
 		Background(tcell.NewHexColor(0xffffea)).
-		Foreground(tcell.ColorBlack)
+		Foreground(tcell.ColorBlack.TrueColor())
 	bodyCursorStyle = bodyStyle.
 		Background(tcell.NewHexColor(0xeaea9e))
 	bodyHilightStyle = bodyStyle.
-		Background(tcell.NewHexColor(0xa6a65a))
+		Background(tcell.NewHexColor(0xeeee9e))
 	unprintableStyle = bodyStyle.
-		Foreground(tcell.ColorRed)
+		Foreground(tcell.ColorRed.TrueColor())
 	tagStyle = tcell.StyleDefault.
 		Background(tcell.NewHexColor(0xeaffff)).
-		Foreground(tcell.ColorBlack)
+		Foreground(tcell.ColorBlack.TrueColor())
 	tagCursorStyle = tagStyle.
 		Background(tcell.NewHexColor(0x8888cc)).
-		Foreground(tcell.ColorBlack)
+		Foreground(tcell.ColorBlack.TrueColor())
 	tagHilightStyle = tagStyle.
-		Background(tcell.NewHexColor(0x8888cc))
+		Background(tcell.NewHexColor(0x9eeeee))
 	tagSquareStyle = tagStyle.
-		Background(tcell.NewHexColor(0x8888cc))
+		Background(tcell.NewHexColor(0xeaffff))
 	tagSquareModifiedStyle = tagStyle.
-		Background(tcell.NewHexColor(0x2222cc))
+		Background(tcell.NewHexColor(0x000099))
 	vertlineStyle = bodyStyle.Reverse(false)
 
 	return nil
