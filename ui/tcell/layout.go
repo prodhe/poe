@@ -41,6 +41,9 @@ func (wrk *Workspace) CloseCol(c *Column) {
 }
 
 func (wrk *Workspace) Col(i int) *Column {
+	if i > len(wrk.cols)-1 {
+		return nil
+	}
 	return wrk.cols[i]
 }
 
