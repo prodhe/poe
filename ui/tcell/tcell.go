@@ -34,10 +34,6 @@ type Tcell struct{}
 func (t *Tcell) Init(e editor.Editor) error {
 	ed = e
 
-	if ed.Len() == 0 {
-		ed.LoadBuffers([]string{"."})
-	}
-
 	if err := initScreen(); err != nil {
 		return err
 	}
@@ -48,6 +44,10 @@ func (t *Tcell) Init(e editor.Editor) error {
 
 	if err := initWorkspace(); err != nil {
 		return err
+	}
+
+	if ed.Len() == 0 {
+		ed.LoadBuffers([]string{"."})
 	}
 
 	if err := initWindows(); err != nil {
@@ -116,7 +116,9 @@ func initScreen() error {
 func initWorkspace() error {
 	workspace = &Workspace{} // first resize event will set proper dimensions
 	workspace.AddCol()
-	workspace.AddCol()
+	if ids, _ := ed.Buffers(); len(ids) == 0 {
+		workspace.AddCol()
+	}
 	return nil
 }
 
