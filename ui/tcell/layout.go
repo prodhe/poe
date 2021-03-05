@@ -111,7 +111,9 @@ func (c *Column) CloseWindow(w *Window) {
 			CurWin = c.windows[j-1]
 		} else {
 			// remove column
-			workspace.CloseCol(c)
+			if c != workspace.Col(0) {
+				workspace.CloseCol(c)
+			}
 
 			// clear clutter
 			screen.Clear()
