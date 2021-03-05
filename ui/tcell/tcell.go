@@ -46,10 +46,6 @@ func (t *Tcell) Init(e editor.Editor) error {
 		return err
 	}
 
-	if err := setStyleAcme(); err != nil {
-		return err
-	}
-
 	if err := initWorkspace(); err != nil {
 		return err
 	}
@@ -120,6 +116,7 @@ func initScreen() error {
 func initWorkspace() error {
 	workspace = &Workspace{} // first resize event will set proper dimensions
 	workspace.AddCol()
+	workspace.AddCol()
 	return nil
 }
 
@@ -173,6 +170,7 @@ outer:
 			case *tcell.EventResize:
 				w, h := screen.Size()
 				workspace.Resize(0, 0, w, h)
+				screen.Clear()
 				screen.Sync()
 			case *tcell.EventKey: // system wide shortcuts
 				switch e.Key() {
@@ -243,7 +241,11 @@ func CmdOpen(fn string) {
 		buf.NewFile(fn)
 		buf.ReadFile()
 		win := NewWindow(id)
-		workspace.LastCol().AddWindow(win)
+		col := workspace.Col(0)
+		if buf.IsDir() {
+			col = workspace.LastCol()
+		}
+		col.AddWindow(win)
 	}
 }
 
