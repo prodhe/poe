@@ -253,7 +253,9 @@ func (b *Buffer) Destroy() {
 	b.buf.Destroy()
 	b.SetDot(0, 0)
 	b.dirty = false
-	b.file.read = false
+	if b.file != nil {
+		b.file.read = false
+	}
 }
 
 // Len returns the number of bytes in buffer.

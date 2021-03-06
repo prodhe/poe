@@ -1,17 +1,29 @@
 package uitcell
 
+import (
+	"fmt"
+
+	"github.com/prodhe/poe/editor"
+)
+
+const (
+	RuneVerticalLine = '\u2502' // \u007c = |, \u23b8, \u2502
+)
+
 type Workspace struct {
 	x, y, w, h int
+	tagline    *View
 	cols       []*Column
 }
 
 type Column struct {
 	x, y, w, h int
+	tagline    *View
 	windows    []*Window
 }
 
 // Add adds a new column and resizes.
-func (wrk *Workspace) AddCol() {
+func (wrk *Workspace) AddCol() *Column {
 	nx, ny := wrk.x, wrk.y
 	nw, nh := wrk.w, wrk.h
 
@@ -21,10 +33,32 @@ func (wrk *Workspace) AddCol() {
 		wrk.cols[len(wrk.cols)-1].w /= 2
 	}
 
-	newcol := &Column{nx, ny, nw, nh, nil}
-	wrk.cols = append(wrk.cols, newcol)
+	newcol := &Column{
+		x: nx,
+		y: ny,
+		w: nw,
+		h: nh,
+		tagline: &View{
+			text:         &editor.Buffer{},
+			what:         ViewColumn,
+			style:        bodyStyle,
+			cursorStyle:  bodyCursorStyle,
+			hilightStyle: bodyHilightStyle,
+			tabstop:      4,
+		},
+		windows: nil,
+	}
+	fmt.Fprintf(newcol.tagline, "%s", "New Delcol ")
+
+	if len(wrk.cols) > 1 {
+		wrk.cols = append(wrk.cols[:len(wrk.cols)-1], newcol, wrk.cols[len(wrk.cols)-1])
+	} else {
+		wrk.cols = append(wrk.cols, newcol)
+	}
 
 	wrk.Resize(wrk.x, wrk.y, wrk.w, wrk.h) // for re-arranging side effects
+
+	return newcol
 }
 
 func (wrk *Workspace) CloseCol(c *Column) {
@@ -53,6 +87,8 @@ func (wrk *Workspace) LastCol() *Column {
 
 func (wrk *Workspace) Resize(x, y, w, h int) {
 	wrk.x, wrk.y, wrk.w, wrk.h = x, y, w, h
+	wrk.tagline.x, wrk.tagline.y, wrk.tagline.w = x, y, w
+	wrk.tagline.h = 1
 
 	n := len(wrk.cols)
 	if n == 0 {
@@ -69,22 +105,22 @@ func (wrk *Workspace) Resize(x, y, w, h int) {
 			if n > 1 {
 				firstvertline = 1
 			}
-			wrk.cols[i].Resize(x, y, (w/n)+remainder-(n-1)-firstvertline, h)
+			wrk.cols[i].Resize(x, y+1, (w/n)+remainder-(n-1)-firstvertline, h)
 			continue
 		}
 		// +i-n-1 on x so we do not draw on last vert line of previous col
-		wrk.cols[i].Resize((w/n)*i+remainder+i-(n-1), y, (w/n)-1, h)
+		wrk.cols[i].Resize((w/n)*i+remainder+i-(n-1), y+1, (w/n)-1, h)
 	}
 }
 
 func (wrk *Workspace) Draw() {
+	wrk.tagline.Draw()
 	for _, col := range wrk.cols {
 		col.Draw()
 
 		// draw vertical lines between cols
-		for x, y := col.x+col.w+1, wrk.y; y < wrk.y+wrk.h; y++ {
-			// 2502
-			screen.SetContent(x, y, '\u007c', nil, vertlineStyle)
+		for x, y := col.x+col.w+1, wrk.y+1; y < wrk.y+wrk.h; y++ {
+			screen.SetContent(x, y, RuneVerticalLine, nil, vertlineStyle)
 		}
 	}
 }
@@ -106,15 +142,10 @@ func (c *Column) CloseWindow(w *Window) {
 	c.windows = c.windows[:j]
 
 	if CurWin == w {
-		// If we are not out of windows in our own column, pick another or exit
+		// If we are not out of windows in our own column, pick another or do nothing
 		if len(c.windows) > 0 {
 			CurWin = c.windows[j-1]
 		} else {
-			// remove column
-			if c != workspace.Col(0) {
-				workspace.CloseCol(c)
-			}
-
 			// clear clutter
 			screen.Clear()
 
@@ -128,6 +159,8 @@ func (c *Column) CloseWindow(w *Window) {
 func (c *Column) Resize(x, y, w, h int) {
 	c.x, c.y = x, y
 	c.w, c.h = w, h
+	c.tagline.x, c.tagline.y = x, y
+	c.tagline.w, c.tagline.h = w, 1
 
 	c.ResizeWindows()
 }
@@ -141,15 +174,26 @@ func (c *Column) ResizeWindows() {
 	}
 	for i, win := range c.windows {
 		if i == 0 {
-			win.Resize(c.x, c.y, c.w, (c.h/n)+remainder)
+			win.Resize(c.x, c.y+1, c.w, (c.h/n)+remainder)
 			continue
 		}
-		win.Resize(c.x, c.y+(c.h/n)*i+remainder, c.w, c.h/n)
+		win.Resize(c.x, c.y+1+(c.h/n)*i+remainder, c.w, c.h/n)
 	}
 }
 
 func (c *Column) Draw() {
+	c.tagline.Draw()
 	for _, win := range c.windows {
 		win.Draw()
+	}
+	if len(c.windows) == 0 {
+		x, y := c.x, c.y+1
+		for ; y < c.y+c.h; y++ {
+			x = c.x + c.w
+			for x >= c.x {
+				screen.SetContent(x, y, ' ', nil, bodyStyle)
+				x--
+			}
+		}
 	}
 }

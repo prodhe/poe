@@ -127,6 +127,7 @@ func (win *Window) HandleEvent(ev tcell.Event) {
 			win.tagline.focused = false
 		} else {
 			win.tagline.focused = true
+			win.body.focused = false
 		}
 	case *tcell.EventKey:
 		switch ev.Key() {

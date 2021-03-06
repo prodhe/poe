@@ -16,6 +16,7 @@ import (
 
 const (
 	ViewMenu int = iota
+	ViewColumn
 	ViewTagline
 	ViewBody
 	ViewScratch
@@ -235,7 +236,7 @@ func (v *View) ScrollTo(offset int) {
 }
 
 func (b *View) Draw() {
-	//screen.HideCursor()
+	// screen.HideCursor()
 
 	x, y := b.x, b.y
 
@@ -261,7 +262,7 @@ func (b *View) Draw() {
 
 			// highlight cursor if on screen
 			if (q0 == q1 && i == q0) && b.focused {
-				//style = b.cursorStyle
+				// style = b.cursorStyle
 				screen.ShowCursor(x, y)
 			}
 
@@ -512,9 +513,6 @@ func (v *View) HandleEvent(ev tcell.Event) {
 				ed.WorkDir(), CurWin.Dir(), CurWin.Name(),
 				CurWin.w, CurWin.h, sh, sw)
 			return
-		case tcell.KeyCtrlN: // new column
-			CmdNewcol()
-			return
 		case tcell.KeyCtrlC: // copy to clipboard
 			str := v.text.ReadDot()
 			if str == "" {
@@ -533,6 +531,10 @@ func (v *View) HandleEvent(ev tcell.Event) {
 			v.text.Write([]byte(s))
 			return
 		case tcell.KeyCtrlQ: // close window
+			if v.what == ViewColumn || v.what == ViewMenu {
+				CmdDelcol() // calls CmdExit if cols < 2
+				return
+			}
 			CmdDel()
 			return
 		default:
@@ -575,7 +577,11 @@ func ButtonSecondary(v *View, mx, my int) {
 		return
 	}
 	if fn != "" && fn[0] != filepath.Separator {
-		fn = CurWin.Dir() + string(filepath.Separator) + fn
+		if CurWin != nil {
+			fn = CurWin.Dir() + string(filepath.Separator) + fn
+		} else {
+			fn = ed.WorkDir() + string(filepath.Separator) + fn
+		}
 		fn = filepath.Clean(fn)
 	}
 

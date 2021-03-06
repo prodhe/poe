@@ -19,6 +19,7 @@ var (
 	screen    tcell.Screen
 	ed        editor.Editor
 	workspace *Workspace
+	CurCol    *Column
 	CurWin    *Window
 
 	poecmds map[string]commandFunc
@@ -39,6 +40,10 @@ func (t *Tcell) Init(e editor.Editor) error {
 	}
 
 	if err := initStyles(); err != nil {
+		return err
+	}
+
+	if err := setStyleAcme(); err != nil {
 		return err
 	}
 
@@ -72,14 +77,21 @@ func (t *Tcell) Close() {
 
 func printMsg(format string, a ...interface{}) {
 	// get output window
-	poename := CurWin.Dir() + string(filepath.Separator) + FnMessageWin
+	var poename string
+
+	if CurWin != nil {
+		poename = CurWin.Dir()
+	} else {
+		poename = ed.WorkDir()
+	}
+	poename += string(filepath.Separator) + FnMessageWin
 	poename = filepath.Clean(poename)
 
 	poewin := FindWindow(poename)
 
 	if poewin == nil {
 		id, buf := ed.NewBuffer()
-		buf.NewFile(CurWin.Dir() + string(filepath.Separator) + FnMessageWin)
+		buf.NewFile(poename)
 		poewin = NewWindow(id)
 		poewin.body.what = ViewScratch
 
@@ -114,7 +126,17 @@ func initScreen() error {
 }
 
 func initWorkspace() error {
-	workspace = &Workspace{} // first resize event will set proper dimensions
+	workspace = &Workspace{ // first resize event will set proper dimensions
+		tagline: &View{
+			text:         &editor.Buffer{},
+			what:         ViewMenu,
+			style:        tagStyle,
+			cursorStyle:  tagCursorStyle,
+			hilightStyle: tagHilightStyle,
+			tabstop:      4,
+		},
+	}
+	fmt.Fprintf(workspace.tagline, "%s", "Newcol Exit ")
 	workspace.AddCol()
 	if ids, _ := ed.Buffers(); len(ids) == 0 {
 		workspace.AddCol()
@@ -134,8 +156,9 @@ func initWindows() error {
 
 func initCommands() {
 	poecmds = map[string]commandFunc{
-		"New":    CmdNew,
 		"Newcol": CmdNewcol,
+		"Delcol": CmdDelcol,
+		"New":    CmdNew,
 		"Del":    CmdDel,
 		"Get":    CmdGet,
 		"Exit":   CmdExit,
@@ -182,10 +205,46 @@ outer:
 				default: // let the focused view handle event
 					if CurWin != nil {
 						CurWin.HandleEvent(e)
+					} else if CurCol != nil {
+						CurCol.tagline.HandleEvent(e)
+					} else {
+						workspace.tagline.HandleEvent(e)
 					}
 				}
 			case *tcell.EventMouse:
+				screen.HideCursor()
 				mx, my := e.Position()
+				if CurCol != nil {
+					CurCol.tagline.focused = false
+				}
+				if CurWin != nil {
+					CurWin.UnFocus()
+				}
+				CurCol = nil
+				CurWin = nil
+
+				if my < 1 {
+					workspace.tagline.focused = true
+					workspace.tagline.HandleEvent(e)
+				} else {
+					workspace.tagline.focused = false
+				}
+
+				for _, col := range workspace.cols {
+					if mx >= col.x && mx < col.x+col.w &&
+						my >= col.y && my < col.y+col.h {
+						CurCol = col
+					}
+				}
+
+				if CurCol != nil {
+					if my == CurCol.y {
+						CurCol.tagline.focused = true
+						CurCol.tagline.HandleEvent(e)
+					} else {
+						CurCol.tagline.focused = false
+					}
+				}
 
 				// find which window to send the event to
 				for _, win := range AllWindows() {
@@ -238,44 +297,63 @@ func CmdOpen(fn string) {
 	screen.Clear()
 	var win *Window
 	win = FindWindow(fn)
-	if win == nil { //only load windows that do no already exists
-		id, buf := ed.NewBuffer()
-		buf.NewFile(fn)
-		buf.ReadFile()
-		win := NewWindow(id)
-		col := workspace.Col(0)
-		if buf.IsDir() {
-			col = workspace.LastCol()
-		}
-		col.AddWindow(win)
+
+	if win != nil { //only load windows that do no already exists
+		return
 	}
+
+	id, buf := ed.NewBuffer()
+	buf.NewFile(fn)
+	buf.ReadFile()
+	win = NewWindow(id)
+	var col *Column
+	if !buf.IsDir() {
+		// add file window second to last or the first
+		if len(workspace.cols) > 2 {
+			col = workspace.Col(len(workspace.cols) - 2)
+		} else {
+			col = workspace.Col(0)
+		}
+	} else {
+		// add all dirs to last column
+		col = workspace.LastCol()
+	}
+	col.AddWindow(win)
 }
 
 func CmdNew() {
 	screen.Clear()
 	id, _ := ed.NewBuffer()
 	win := NewWindow(id)
-	workspace.LastCol().AddWindow(win)
+	CurCol.AddWindow(win)
 }
 
 func CmdDel() {
-	if len(AllWindows()) == 1 {
-		CmdExit()
-		return
-	}
 	CurWin.Close()
+	screen.HideCursor()
 }
 
 func CmdNewcol() {
 	workspace.AddCol()
-	CmdNew()
+	screen.Clear()
+}
+
+func CmdDelcol() {
+	if len(workspace.cols) < 2 {
+		CmdExit()
+	} else if CurCol != nil {
+		workspace.CloseCol(CurCol)
+	} else if CurWin != nil {
+		workspace.CloseCol(CurWin.col)
+	}
+	screen.Clear()
 }
 
 func CmdGet() {
 	screen.Clear()
 	wins := AllWindows()
 	for _, win := range wins {
-		if win.tagline.focused {
+		if win.tagline.focused || win.body.focused {
 			q0, q1 := win.body.text.Dot()
 			win.body.text.Destroy()
 			win.body.text.ReadFile()
